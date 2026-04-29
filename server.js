@@ -5,13 +5,24 @@ require('dotenv').config();
 
 // Initialize Firebase Admin with Service Account
 // On Railway, you will upload service-account.json or use env vars
-const serviceAccount = require('./service-account.json');
+let serviceAccount;
+try {
+  serviceAccount = require('./service-account.json');
+} catch (e) {
+  // If file is missing (like on Railway), use Environment Variable
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } else {
+    console.error('❌ Error: Firebase Service Account not found (File or Env Var missing)');
+  }
+}
 
-if (!admin.apps.length) {
+if (!admin.apps.length && serviceAccount) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
   });
 }
+
 
 const app = express();
 app.use(cors({ origin: true }));

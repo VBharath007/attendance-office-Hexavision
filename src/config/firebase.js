@@ -7,15 +7,22 @@ if (!admin.apps.length) {
   if (isEmulator) {
     admin.initializeApp({ projectId: 'attendance-office-hexa' });
   } else {
+    let serviceAccount;
     try {
-      // Try to load service-account.json (for local/Railway with file)
-      const serviceAccount = require('../../service-account.json');
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      serviceAccount = require('../../service-account.json');
     } catch (e) {
-      // Fallback to default (for real Firebase Functions environment)
-      admin.initializeApp();
+      if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      }
+    }
+
+    if (serviceAccount) {
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    } else {
+      admin.initializeApp(); // Fallback for real Functions env
     }
   }
+
 
 }
 
