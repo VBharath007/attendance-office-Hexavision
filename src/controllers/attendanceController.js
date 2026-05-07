@@ -29,4 +29,49 @@ const getToday = async (req, res) => {
   }
 };
 
-module.exports = { checkIn, checkOut, getToday };
+const getMonthly = async (req, res) => {
+  try {
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const result = await attendanceService.getMonthlyAttendance(req.user.uid, month, year);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getMonthlySummary = async (req, res) => {
+  try {
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    
+    // Get both history and summary
+    const history = await attendanceService.getMonthlyAttendance(req.user.uid, month, year);
+    const summary = await attendanceService.computeMonthlySummary(req.user.uid, month, year);
+    
+    res.json({ 
+      success: true, 
+      data: {
+        records: history.records,
+        summary: summary
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+const getAdminToday = async (req, res) => {
+  try {
+    const result = await attendanceService.getAdminToday();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary };
+
+
+

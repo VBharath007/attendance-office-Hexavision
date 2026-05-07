@@ -1,9 +1,15 @@
 const { db } = require('../config/firebase');
 
-const getAllEmployees = async () => {
-  const snap = await db.collection('employees').orderBy('full_name').get();
+const getAllEmployees = async (status = null) => {
+  let query = db.collection('employees');
+  if (status) {
+    query = query.where('status', '==', status);
+  }
+  const snap = await query.get();
   return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 };
+
+
 
 const updateSalary = async (uid, salaryData) => {
   const { monthly_salary, bank_name, account_number, ifsc_code } = salaryData;
@@ -17,4 +23,13 @@ const updateSalary = async (uid, salaryData) => {
   return { uid, monthly_salary };
 };
 
-module.exports = { getAllEmployees, updateSalary };
+const approveEmployee = async (uid) => {
+  await db.collection('employees').doc(uid).update({
+    status: 'active',
+    updated_at: new Date()
+  });
+  return { uid, status: 'active' };
+};
+
+module.exports = { getAllEmployees, updateSalary, approveEmployee };
+

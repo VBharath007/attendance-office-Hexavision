@@ -19,14 +19,21 @@ try {
 
 if (!admin.apps.length && serviceAccount) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
+    projectId: serviceAccount.project_id
   });
 }
 
 
+
 const app = express();
-app.use(cors({ origin: true }));
+app.use(cors({
+  origin: '*', // Allow all origins for testing
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
+
 
 // Import Routes
 const authRoutes = require('./src/routes/auth');
@@ -36,6 +43,30 @@ const employeeRoutes = require('./src/routes/employees');
 
 // Use Routes
 app.use('/api/auth', authRoutes);
+
+// 👑 MASTER SETUP ROUTE
+app.get('/setup-admin', async (req, res) => {
+  try {
+    const { db, auth } = require('./src/config/firebase');
+    const bcrypt = require('bcryptjs');
+    
+    console.log('🚀 Running Master Setup...');
+    const hashed = await bcrypt.hash('admin123', 12);
+    const adminData = { username: 'admin', password: hashed, full_name: 'Hexavision Admin', role: 'admin' };
+    
+    // Check if exists
+    const existing = await db.collection('admins').where('username', '==', 'admin').get();
+    if (existing.empty) {
+      await db.collection('admins').add(adminData);
+      res.send('<h1>✅ Admin Created!</h1><p>Username: <b>admin</b><br>Password: <b>admin123</b></p>');
+    } else {
+      res.send('<h1>ℹ️ Admin already exists!</h1><p>You can login with <b>admin / admin123</b></p>');
+    }
+  } catch (err) {
+    res.status(500).send('<h1>❌ Setup Failed</h1>' + err.message);
+  }
+});
+
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/employees', employeeRoutes);
@@ -43,7 +74,7 @@ app.use('/api/employees', employeeRoutes);
 // Health Check
 app.get('/', (req, res) => res.send('Hexavision Attendance API is running! 🚀'));
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8081;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

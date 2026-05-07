@@ -26,8 +26,30 @@ const applyLeave = async (userId, data) => {
 };
 
 const getEmployeeLeaves = async (userId) => {
-  const snap = await db.collection('leaves').where('employee_id', '==', userId).orderBy('created_at', 'desc').get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const snap = await db.collection('leaves').where('employee_id', '==', userId).get();
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.created_at?.toDate() || 0) - (a.created_at?.toDate() || 0));
 };
 
-module.exports = { applyLeave, getEmployeeLeaves };
+const getPendingLeaves = async () => {
+  const snap = await db.collection('leaves').where('status', '==', 'pending').get();
+  const leaves = [];
+  for (const doc of snap.docs) {
+    const leave = { id: doc.id, ...doc.data() };
+    const empSnap = await db.collection('employees').doc(leave.employee_id).get();
+    leave.employee = empSnap.exists ? empSnap.data() : null;
+    leaves.push(leave);
+  }
+  return leaves;
+};
+
+const reviewLeave = async (id, { status, admin_remarks }) => {
+  await db.collection('leaves').doc(id).update({
+    status, admin_remarks: admin_remarks || '', reviewed_at: new Date()
+  });
+  return { id, status };
+};
+
+module.exports = { applyLeave, getEmployeeLeaves, getPendingLeaves, reviewLeave };
+

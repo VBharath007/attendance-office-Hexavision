@@ -10,6 +10,10 @@ module.exports = {
   LATE_DEDUCTION_FROM_DAY: 3,
   EARNED_LEAVES_PER_MONTH: 1,
 
+  OFFICE_LAT: 9.932548064389838,
+  OFFICE_LNG: 78.14469758285455,
+  MAX_DISTANCE_METERS: 20, // Temporarily increased for emulator testing
+
   ROLES: { ADMIN: 'admin', EMPLOYEE: 'employee' },
 
   STATUS: {

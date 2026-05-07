@@ -10,8 +10,32 @@ const GRACE = toMin(C.GRACE_TIME);
 const OFFICE_END = toMin(C.OFFICE_END);
 const APPRECIATION_END = toMin(C.APPRECIATION_CHECKOUT_MIN);
 
+// Haversine formula to get distance in meters
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
+}
+
 // ─── Check In ────────────────────────────────────────────────────────────────
 const checkIn = async (employeeId, latitude, longitude) => {
+  if (!latitude || !longitude) {
+    throw new Error('Location access is required to mark attendance');
+  }
+
+  const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
+  if (distance > C.MAX_DISTANCE_METERS) {
+    throw new Error(`You must be within ${C.MAX_DISTANCE_METERS} meters of the office. You are ${Math.round(distance)} meters away.`);
+  }
   const now = moment().tz(TZ);
   const today = now.format('YYYY-MM-DD');
   const timeNow = now.format('HH:mm');
@@ -102,6 +126,15 @@ const checkIn = async (employeeId, latitude, longitude) => {
 
 // ─── Check Out ───────────────────────────────────────────────────────────────
 const checkOut = async (employeeId, latitude, longitude) => {
+  if (!latitude || !longitude) {
+    throw new Error('Location access is required to mark attendance');
+  }
+
+  const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
+  if (distance > C.MAX_DISTANCE_METERS) {
+    throw new Error(`You must be within ${C.MAX_DISTANCE_METERS} meters of the office. You are ${Math.round(distance)} meters away.`);
+  }
+
   const now = moment().tz(TZ);
   const today = now.format('YYYY-MM-DD');
   const timeNow = now.format('HH:mm');
@@ -191,8 +224,8 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     if (day.day() !== 0 && !holidays.has(day.format('YYYY-MM-DD'))) totalWorkingDays++;
   }
 
-  const presentDays = records.filter(r => ['present', 'late'].includes(r.status)).length;
-  const lateDays = records.filter(r => r.status === 'late').length;
+  const presentDays = records.filter(r => ['present', 'late', 'half_day'].includes(r.status)).length;
+  const lateDays = records.filter(r => r.late_minutes > 0).length;
   const halfDays = records.filter(r => r.status === 'half_day').length;
   const appreciationDays = records.filter(r => r.is_appreciated).length;
   const totalWorkingHours = records.reduce((s, r) => s + (r.working_hours || 0), 0);
@@ -216,13 +249,22 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const permissionHours = leaves.filter(l => l.leave_type === 'permission_hours').reduce((s, l) => s + (l.permission_hours || 0), 0);
   const absentDays = Math.max(0, totalWorkingDays - presentDays - halfDays * 0.5 - earnedLeaveUsed - unpaidLeaveDays);
 
-  const dailyRate = monthlySalary / 30; // Always 30 days divisor as requested
-  const hourlyRate = dailyRate / C.NET_WORKING_HOURS; // Divisor is 9 (OFFICE_START to OFFICE_END)
+  const dailyRate = monthlySalary / 30; // Always 30 days divisor
+  const hourlyRate = dailyRate / 9; // 9 hours working day
 
-  const lateDeduction = parseFloat((totalLateDeductHours * hourlyRate).toFixed(2));
+  // 🕒 Late Deduction Logic: 1st & 2nd are free. 3rd+ deducts 1 hour.
+  const lateDaysCount = records.filter(r => r.status === 'late').length;
+  const taxableLateDays = Math.max(0, lateDaysCount - 2);
+  const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2));
+
+  // 🌴 Leave Deduction Logic: 1st leave is free.
+  const totalLeavesTaken = earnedLeaveUsed + unpaidLeaveDays;
+  const taxableLeaveDays = Math.max(0, totalLeavesTaken - 1);
+  const leaveDeduction = parseFloat((taxableLeaveDays * dailyRate).toFixed(2));
+
   const absentDeduction = parseFloat((absentDays * dailyRate).toFixed(2));
-  const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2));
-  const totalDeduction = parseFloat((lateDeduction + absentDeduction + unpaidLeaveDeduction).toFixed(2));
+  
+  const totalDeduction = parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2));
   const netSalary = parseFloat(Math.max(0, monthlySalary - totalDeduction).toFixed(2));
 
   const summary = {
@@ -231,23 +273,21 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     total_working_days: totalWorkingDays,
     present_days: presentDays,
     absent_days: parseFloat(absentDays.toFixed(2)),
-    late_days: lateDays,
-    half_days: halfDays,
-    earned_leave_used: earnedLeaveUsed,
-    unpaid_leave_days: unpaidLeaveDays,
-    permission_hours: permissionHours,
-    total_working_hours: parseFloat(totalWorkingHours.toFixed(2)),
-    expected_hours: totalWorkingDays * C.NET_WORKING_HOURS,
-    appreciation_days: appreciationDays,
-    late_deduction_hours: totalLateDeductHours,
+    late_days: lateDaysCount,
+    taxable_late_days: taxableLateDays,
+    leave_days: totalLeavesTaken,
+    taxable_leave_days: taxableLeaveDays,
     gross_salary: monthlySalary,
+    daily_rate: parseFloat(dailyRate.toFixed(2)),
+    hourly_rate: parseFloat(hourlyRate.toFixed(2)),
     late_deduction: lateDeduction,
+    leave_deduction: leaveDeduction,
     absent_deduction: absentDeduction,
-    unpaid_leave_deduction: unpaidLeaveDeduction,
     total_deduction: totalDeduction,
     net_salary: netSalary,
     updated_at: new Date(),
   };
+
 
   await db.collection('monthly_summary')
     .doc(`${employeeId}_${year}_${month}`)
@@ -262,5 +302,45 @@ const getTodayRecord = async (employeeId) => {
   return snap.exists ? snap.data() : null;
 };
 
-module.exports = { checkIn, checkOut, getMonthlyAttendance, computeMonthlySummary, getTodayRecord };
+const getAdminToday = async () => {
+  const todayStr = moment().tz(TZ).format('YYYY-MM-DD');
+  const attSnap = await db.collection('attendance').where('date', '==', todayStr).get();
+  const empSnap = await db.collection('employees').where('status', '==', 'active').get();
 
+  const employees = {};
+  empSnap.forEach(doc => {
+    employees[doc.id] = doc.data();
+  });
+
+  let presentCount = 0;
+  let lateCount = 0;
+  let appreciatedCount = 0;
+
+  const data = attSnap.docs.map(doc => {
+    const att = doc.data();
+    const emp = employees[att.employee_id] || {};
+    
+    presentCount++;
+    if (att.status === C.STATUS.LATE) lateCount++;
+    if (att.is_appreciated) appreciatedCount++;
+
+    return {
+      id: doc.id,
+      ...att,
+      full_name: emp.full_name || null,
+      designation: emp.designation || null,
+      employee_id: emp.employee_id || att.employee_id // prefer actual employee_id over UID if available
+    };
+  });
+
+  const summary = {
+    present: presentCount,
+    absent: Math.max(0, empSnap.size - presentCount),
+    late: lateCount,
+    appreciated: appreciatedCount
+  };
+
+  return { summary, data };
+};
+
+module.exports = { checkIn, checkOut, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord };

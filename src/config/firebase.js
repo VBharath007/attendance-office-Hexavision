@@ -2,11 +2,13 @@ const admin = require('firebase-admin');
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
-  const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true' || process.env.FIRESTORE_EMULATOR_HOST;
-  
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+
   if (isEmulator) {
-    admin.initializeApp({ projectId: 'attendance-office-hexa' });
+    console.log('🧪 Using Firebase Emulator');
+    admin.initializeApp({ projectId: 'attendance-2333a' });
   } else {
+
     let serviceAccount;
     try {
       serviceAccount = require('../../service-account.json');
@@ -17,10 +19,17 @@ if (!admin.apps.length) {
     }
 
     if (serviceAccount) {
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      console.log('✅ Initializing with Service Account for Project:', serviceAccount.project_id);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.project_id
+      });
     } else {
-      admin.initializeApp(); // Fallback for real Functions env
+      console.log('⚠️ No service account found, using default initialization');
+      admin.initializeApp();
     }
+
+
   }
 
 

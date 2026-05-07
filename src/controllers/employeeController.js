@@ -2,9 +2,11 @@ const employeeService = require('../services/employeeService');
 
 const list = async (req, res) => {
   try {
-    const emps = await employeeService.getAllEmployees();
+    const { status } = req.query;
+    const emps = await employeeService.getAllEmployees(status);
     res.json({ success: true, data: emps });
   } catch (err) {
+
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -18,4 +20,14 @@ const setSalary = async (req, res) => {
   }
 };
 
-module.exports = { list, setSalary };
+const approve = async (req, res) => {
+  try {
+    await employeeService.approveEmployee(req.params.uid);
+    res.json({ success: true, message: 'Employee approved successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { list, setSalary, approve };
+

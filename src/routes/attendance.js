@@ -1,11 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, adminOnly } = require('../middleware/auth');
+
 const attendanceController = require('../controllers/attendanceController');
 
 // Routes
 router.post('/check-in', authenticate, attendanceController.checkIn);
 router.post('/check-out', authenticate, attendanceController.checkOut);
 router.get('/today', authenticate, attendanceController.getToday);
+router.get('/monthly', authenticate, attendanceController.getMonthlySummary);
+router.get('/history', authenticate, attendanceController.getMonthly);
+router.get('/admin/today', authenticate, adminOnly, attendanceController.getAdminToday);
+
 
 module.exports = router;
+
