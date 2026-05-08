@@ -369,6 +369,24 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const records = attSnap.docs.map(d => d.data())
     .filter(r => { const [y, m] = r.date.split('-').map(Number); return y === year && m === month; });
 
+  // Get approved leaves
+  const yearlyLeaveSnap = await db.collection('leaves')
+    .where('employee_id', '==', employeeId)
+    .where('status', '==', 'approved')
+    .get();
+
+  const yearlyLeaves = yearlyLeaveSnap.docs.map(d => d.data())
+    .filter(l => {
+      const d = l.from_date || l.permission_date;
+      if (!d) return false;
+      return parseInt(d.split('-')[0]) === year;
+    });
+
+  const monthlyLeaves = yearlyLeaves.filter(l => {
+    const d = l.from_date || l.permission_date;
+    return parseInt(d.split('-')[1]) === month;
+  });
+
   // Count working days (exclude Sundays & holidays)
   const daysInMonth = moment(`${year}-${month}`, 'YYYY-M').daysInMonth();
   const holidaySnap = await db.collection('holidays').get();
@@ -418,6 +436,26 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const halfDays = records.filter(r => r.status === 'half_day').length;
   const appreciationDays = records.filter(r => r.is_appreciated).length;
   
+  // Leave calculations
+  const sickLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'sick').length;
+  const casualLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'casual').length;
+  const permissionLeavesThisMonth = monthlyLeaves.filter(l => l.leave_type === 'permission');
+  const unpaidLeaveDays = monthlyLeaves.filter(l => l.leave_type === 'unpaid').length;
+  const leaveHalfDays = monthlyLeaves.filter(l => l.leave_type === 'half_day').length;
+  
+  const sickLeavesTakenThisYear = yearlyLeaves.filter(l => l.leave_type === 'sick').length;
+  const taxableSickDays = Math.max(0, sickLeavesTakenThisYear - C.SICK_LEAVES_PER_YEAR);
+  const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - C.CASUAL_LEAVES_PER_MONTH);
+  
+  const totalPermissionMinutes = permissionLeavesThisMonth.reduce((s, l) => s + (l.duration_minutes || 0), 0);
+  const taxablePermissionMinutes = Math.max(0, totalPermissionMinutes - C.FREE_PERMISSION_MIN_PER_MONTH);
+  const taxablePermissionHours = taxablePermissionMinutes / 60;
+  
+  const totalHalfDaysCount = halfDays + leaveHalfDays;
+  const halfDayDeductionDays = totalHalfDaysCount > 2 ? totalHalfDaysCount * 0.5 : 0;
+  
+  const leaveDaysSum = sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5;
+
   const totalWorkingHours = records.reduce((s, r) => {
     let wh = r.working_hours;
     // If working_hours is missing or 0 but we have check_in and check_out, re-calculate it on the fly
@@ -434,10 +472,6 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   }, 0);
   const totalLateDeductHours = records.reduce((s, r) => s + (r.late_deduction_hours || 0), 0);
 
-  // Approved leaves for the year
-  const yearlyLeaveSnap = await db.collection('leaves')
-    .where('employee_id', '==', employeeId)
-    .where('status', '==', 'approved')
     .get();
 
   const yearlyLeaves = yearlyLeaveSnap.docs.map(d => d.data())
