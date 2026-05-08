@@ -17,7 +17,7 @@ app.use(express.json());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 100,
   keyGenerator: (req) => req.ip || req.headers['x-forwarded-for'] || 'anonymous',
 });
 
