@@ -68,11 +68,16 @@ const checkIn = async (employeeId, latitude, longitude) => {
 
   if (now.day() === 0) throw new Error('Today is Sunday - no check-in required');
 
-  // Rule 1: Check-in only allowed between 9:30 AM and 10:10 AM
+  // Rule 1 & 4: Check-in only allowed between 9:30 AM and 10:10 AM (Regular) or after 6:30 PM (Overtime)
   const allowedStart = toMin('09:30');
   const allowedEnd = toMin('10:10');
-  if (checkInMin < allowedStart || checkInMin > allowedEnd) {
-    throw new Error('Check-in is only allowed between 09:30 AM and 10:10 AM');
+  const overtimeStart = toMin('18:30');
+  
+  const isRegularCheckIn = checkInMin >= allowedStart && checkInMin <= allowedEnd;
+  const isOvertimeCheckIn = checkInMin >= overtimeStart;
+
+  if (!isRegularCheckIn && !isOvertimeCheckIn) {
+    throw new Error('Check-in is only allowed between 09:30 AM and 10:10 AM or after 06:30 PM');
   }
 
   const attRef = db.collection('attendance').doc(docId);
@@ -127,7 +132,9 @@ const checkIn = async (employeeId, latitude, longitude) => {
     check_in_timestamp: new Date(),
     check_in_lat: latitude || null,
     check_in_lng: longitude || null,
-    status: isLate ? C.STATUS.LATE : C.STATUS.PRESENT,
+    status: isOvertimeCheckIn ? 'present' : (isLate ? C.STATUS.LATE : C.STATUS.PRESENT),
+    is_overtime_entry: isOvertimeCheckIn,
+    is_appreciated: isOvertimeCheckIn,
     late_minutes: lateMinutes,
     late_deduction_hours: lateDeductionHours,
     is_warning_day: isWarningDay,
@@ -463,6 +470,9 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     absent_deduction: absentDeduction,
     total_deduction: totalDeduction,
     net_salary: netSalary,
+    total_working_hours: parseFloat(totalWorkingHours.toFixed(2)),
+    overtime_minutes: records.reduce((s, r) => s + (r.overtime_minutes || 0), 0),
+    appreciated_count: appreciationDays,
     updated_at: new Date(),
   };
 
