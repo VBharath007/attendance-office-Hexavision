@@ -418,13 +418,17 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     return parseInt(d.split('-')[1]) === month;
   });
 
-  // Calculate Sick Leaves
+  // Calculate Sick Leaves (12 per year, but isolated deduction for this month)
   const sickLeavesTakenThisYear = yearlyLeaves.filter(l => l.leave_type === 'sick').reduce((s, l) => s + (l.total_days || 0), 0);
   const sickLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'sick').reduce((s, l) => s + (l.total_days || 0), 0);
-  const previousSickLeavesTakenThisYear = sickLeavesTakenThisYear - sickLeavesTakenThisMonth;
-  const taxableSickDays = Math.max(0, sickLeavesTakenThisMonth - Math.max(0, 12 - previousSickLeavesTakenThisYear));
+  const sickLeavesBeforeThisMonth = Math.max(0, sickLeavesTakenThisYear - sickLeavesTakenThisMonth);
+  
+  // Taxable sick days this month: Any sick leave taken AFTER the 12-day yearly limit is reached.
+  // Example: used 10 before this month, take 5 this month. 12-10=2 free days left. 5-2=3 taxable days.
+  const freeSickDaysRemaining = Math.max(0, 12 - sickLeavesBeforeThisMonth);
+  const taxableSickDays = Math.max(0, sickLeavesTakenThisMonth - freeSickDaysRemaining);
 
-  // Calculate Casual Leaves
+  // Calculate Casual Leaves (1 per month limit)
   const casualLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'casual').reduce((s, l) => s + (l.total_days || 0), 0);
   const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - 1);
 
