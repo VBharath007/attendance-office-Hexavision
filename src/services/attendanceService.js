@@ -313,7 +313,10 @@ const editAttendanceTiming = async (employeeId, date, checkInTime, checkOutTime)
 
   if (checkOutMin) {
     const rawMinutes = checkOutMin - checkInMin;
-    workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
+    const rawHours = rawMinutes / 60;
+    // Only subtract lunch break if worked more than 6 hours
+    const lunchDeduction = rawHours > 6 ? C.LUNCH_BREAK_HOURS : 0;
+    workingHours = parseFloat(Math.max(0, rawHours - lunchDeduction).toFixed(2));
     overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
     isAppreciated = lateMinutes === 0 && checkOutMin >= APPRECIATION_END;
     if (workingHours < 4) status = C.STATUS.HALF_DAY;
@@ -380,7 +383,21 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const lateDays = records.filter(r => r.late_minutes > 0).length;
   const halfDays = records.filter(r => r.status === 'half_day').length;
   const appreciationDays = records.filter(r => r.is_appreciated).length;
-  const totalWorkingHours = records.reduce((s, r) => s + (r.working_hours || 0), 0);
+  
+  const totalWorkingHours = records.reduce((s, r) => {
+    let wh = r.working_hours;
+    // If working_hours is missing or 0 but we have check_in and check_out, re-calculate it on the fly
+    if ((!wh || wh === 0) && r.check_in && r.check_out) {
+      const inMin = toMin(r.check_in);
+      const outMin = toMin(r.check_out);
+      if (outMin > inMin) {
+        const rawHrs = (outMin - inMin) / 60;
+        const lunchDed = rawHrs > 6 ? C.LUNCH_BREAK_HOURS : 0;
+        wh = parseFloat(Math.max(0, rawHrs - lunchDed).toFixed(2));
+      }
+    }
+    return s + (wh || 0);
+  }, 0);
   const totalLateDeductHours = records.reduce((s, r) => s + (r.late_deduction_hours || 0), 0);
 
   // Approved leaves for the year
