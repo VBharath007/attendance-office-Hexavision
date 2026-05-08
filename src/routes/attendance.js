@@ -11,6 +11,8 @@ router.get('/today', authenticate, attendanceController.getToday);
 router.get('/monthly', authenticate, attendanceController.getMonthlySummary);
 router.get('/history', authenticate, attendanceController.getMonthly);
 router.get('/admin/today', authenticate, adminOnly, attendanceController.getAdminToday);
+router.get('/admin/employee/:employeeId/monthly', authenticate, adminOnly, attendanceController.getAdminEmployeeMonthly);
+router.post('/admin/edit-timing', authenticate, adminOnly, attendanceController.editTiming);
 
 
 module.exports = router;

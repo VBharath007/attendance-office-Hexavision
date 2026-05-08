@@ -3,8 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { db, auth } = require('./config/firebase');
-const { computeMonthlySummary } = require('./services/attendanceService');
+const { db, auth, messaging } = require('./config/firebase');
+const { computeMonthlySummary, autoCheckOutAll } = require('./services/attendanceService');
 const moment = require('moment-timezone');
 const C = require('./config/constants');
 const bcrypt = require('bcryptjs');
@@ -168,3 +168,58 @@ exports.createSuperAdmin = functions.https.onRequest(async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ═══════════════════════════════════════════════════
+// CRON JOBS / SCHEDULED FUNCTIONS
+// ═══════════════════════════════════════════════════
+
+// 1. Auto Checkout at 6:30 PM
+exports.autoCheckOutCron = functions.pubsub.schedule('30 18 * * *')
+  .timeZone(C.TIMEZONE)
+  .onRun(async (context) => {
+    try {
+      const result = await autoCheckOutAll();
+      console.log(`Auto Check-Out Completed: ${result.processed} employees checked out.`);
+      return null;
+    } catch (e) {
+      console.error('Auto Check-Out Failed:', e);
+      return null;
+    }
+  });
+
+// 2. Notification Reminders (9:30 AM, 10:00 AM, 10:10 AM, 6:30 PM)
+const sendReminders = async (title, body) => {
+  const snap = await db.collection('employees').where('status', '==', 'active').get();
+  const tokens = [];
+  snap.docs.forEach(doc => {
+    const data = doc.data();
+    if (data.fcm_token) tokens.push(data.fcm_token);
+  });
+  if (tokens.length > 0) {
+    await messaging.sendEachForMulticast({
+      tokens,
+      notification: { title, body },
+      android: { priority: 'high' }
+    });
+  }
+};
+
+exports.reminder930 = functions.pubsub.schedule('30 9 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    await sendReminders('Check-In Time! 🏢', 'It is 9:30 AM. Don\'t forget to mark your attendance!');
+  });
+
+exports.reminder1000 = functions.pubsub.schedule('0 10 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    await sendReminders('Late Warning! ⏰', 'It is 10:00 AM. Check in before 10:10 AM to avoid being blocked!');
+  });
+
+exports.reminder1010 = functions.pubsub.schedule('10 10 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    await sendReminders('Check-In Closed 🔒', 'It is 10:10 AM. Check-in for today is now closed.');
+  });
+
+exports.reminder1830 = functions.pubsub.schedule('30 18 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    await sendReminders('Shift Ended 🌅', 'It is 6:30 PM. Great work today! The system will auto check you out if you haven\'t already.');
+  });

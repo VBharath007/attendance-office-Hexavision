@@ -3,12 +3,23 @@ const moment = require('moment-timezone');
 const C = require('../config/constants');
 
 const TZ = C.TIMEZONE;
-const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const toMin = (t) => { 
+  if (!t) return 0;
+  if (t.includes(' ')) {
+    const [time, modifier] = t.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (h === 12) h = 0;
+    if (modifier === 'PM' || modifier === 'pm') h += 12;
+    return h * 60 + m;
+  }
+  const [h, m] = t.split(':').map(Number); 
+  return h * 60 + m; 
+};
 
 const OFFICE_START = toMin(C.OFFICE_START);
 const GRACE = toMin(C.GRACE_TIME);
 const OFFICE_END = toMin(C.OFFICE_END);
-const APPRECIATION_END = toMin(C.APPRECIATION_CHECKOUT_MIN);
+const APPRECIATION_END = toMin('18:30'); // New rule: Appreciation starts at 6:30 PM
 
 // Haversine formula to get distance in meters
 function getDistance(lat1, lon1, lat2, lon2) {
@@ -32,16 +43,37 @@ const checkIn = async (employeeId, latitude, longitude) => {
     throw new Error('Location access is required to mark attendance');
   }
 
-  const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
-  if (distance > C.MAX_DISTANCE_METERS) {
-    throw new Error(`You must be within ${C.MAX_DISTANCE_METERS} meters of the office. You are ${Math.round(distance)} meters away.`);
-  }
   const now = moment().tz(TZ);
   const today = now.format('YYYY-MM-DD');
-  const timeNow = now.format('HH:mm');
+
+  // Check for approved WFH leave
+  const wfhSnap = await db.collection('leaves')
+    .where('employee_id', '==', employeeId)
+    .where('status', '==', 'approved')
+    .where('leave_type', '==', 'work_from_home')
+    .get();
+    
+  const isWfhApproved = wfhSnap.docs.some(doc => {
+    const data = doc.data();
+    return today >= data.from_date && today <= data.to_date;
+  });
+
+  const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
+  if (!isWfhApproved && distance > C.MAX_DISTANCE_METERS) {
+    throw new Error(`You must be within ${C.MAX_DISTANCE_METERS} meters of the office. You are ${Math.round(distance)} meters away.`);
+  }
+  const timeNow = now.format('hh:mm A');
+  const checkInMin = toMin(now.format('HH:mm')); // For logic, use precise 24h from moment
   const docId = `${employeeId}_${today}`;
 
   if (now.day() === 0) throw new Error('Today is Sunday - no check-in required');
+
+  // Rule 1: Check-in only allowed between 9:30 AM and 10:10 AM
+  const allowedStart = toMin('09:30');
+  const allowedEnd = toMin('10:10');
+  if (checkInMin < allowedStart || checkInMin > allowedEnd) {
+    throw new Error('Check-in is only allowed between 09:30 AM and 10:10 AM');
+  }
 
   const attRef = db.collection('attendance').doc(docId);
   const attSnap = await attRef.get();
@@ -62,7 +94,6 @@ const checkIn = async (employeeId, latitude, longitude) => {
     await empRef.update({ late_warning_count: 0, late_warning_reset_month: currentMonth, late_warning_reset_year: currentYear });
   }
 
-  const checkInMin = toMin(timeNow);
   const isLate = checkInMin > GRACE;
   const lateMinutes = isLate ? checkInMin - OFFICE_START : 0;
   const newWarningCount = isLate ? warningCount + 1 : warningCount;
@@ -130,14 +161,26 @@ const checkOut = async (employeeId, latitude, longitude) => {
     throw new Error('Location access is required to mark attendance');
   }
 
+  const now = moment().tz(TZ);
+  const today = now.format('YYYY-MM-DD');
+
+  const wfhSnap = await db.collection('leaves')
+    .where('employee_id', '==', employeeId)
+    .where('status', '==', 'approved')
+    .where('leave_type', '==', 'work_from_home')
+    .get();
+    
+  const isWfhApproved = wfhSnap.docs.some(doc => {
+    const data = doc.data();
+    return today >= data.from_date && today <= data.to_date;
+  });
+
   const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
-  if (distance > C.MAX_DISTANCE_METERS) {
+  if (!isWfhApproved && distance > C.MAX_DISTANCE_METERS) {
     throw new Error(`You must be within ${C.MAX_DISTANCE_METERS} meters of the office. You are ${Math.round(distance)} meters away.`);
   }
 
-  const now = moment().tz(TZ);
-  const today = now.format('YYYY-MM-DD');
-  const timeNow = now.format('HH:mm');
+  const timeNow = now.format('hh:mm A');
   const docId = `${employeeId}_${today}`;
 
   const attRef = db.collection('attendance').doc(docId);
@@ -147,7 +190,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
 
   const data = attSnap.data();
   const checkInMin = toMin(data.check_in);
-  const checkOutMin = toMin(timeNow);
+  const checkOutMin = toMin(now.format('HH:mm'));
 
   const rawMinutes = checkOutMin - checkInMin;
   const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
@@ -180,6 +223,104 @@ const checkOut = async (employeeId, latitude, longitude) => {
       ? '🌟 Great work! You earned an Appreciation badge today!'
       : `✅ Checked out. Worked ${workingHours.toFixed(1)} hours today`,
   };
+};
+
+// ─── Auto Check Out All (Scheduled) ──────────────────────────────────────────
+const autoCheckOutAll = async () => {
+  const now = moment().tz(TZ);
+  const today = now.format('YYYY-MM-DD');
+  
+  // Rule: Auto-checkout at exactly 18:30 (6:30 PM)
+  const timeNow = '06:30 PM';
+  const checkOutMin = toMin('18:30');
+
+  const snap = await db.collection('attendance')
+    .where('date', '==', today)
+    .where('check_out', '==', null)
+    .get();
+
+  if (snap.empty) return { processed: 0 };
+
+  const batch = db.batch();
+  let count = 0;
+
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    if (!data.check_in) continue;
+
+    const checkInMin = toMin(data.check_in);
+    const rawMinutes = checkOutMin - checkInMin;
+    const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
+    const overtimeMinutes = 0; // Since it's exactly 18:30, no overtime.
+    
+    let status = data.status;
+    if (workingHours < 4) status = C.STATUS.HALF_DAY;
+
+    batch.update(doc.ref, {
+      check_out: timeNow,
+      check_out_timestamp: new Date(),
+      check_out_lat: null,
+      check_out_lng: null,
+      working_hours: workingHours,
+      overtime_minutes: overtimeMinutes,
+      is_appreciated: false,
+      status,
+      updated_at: new Date(),
+    });
+    count++;
+  }
+
+  if (count > 0) {
+    await batch.commit();
+  }
+  return { processed: count };
+};
+
+// ─── Admin Edit Attendance Timing ────────────────────────────────────────────
+const editAttendanceTiming = async (employeeId, date, checkInTime, checkOutTime) => {
+  const docId = `${employeeId}_${date}`;
+  const attRef = db.collection('attendance').doc(docId);
+  const attSnap = await attRef.get();
+  
+  if (!attSnap.exists) {
+    throw new Error('Attendance record not found for this date.');
+  }
+
+  const data = attSnap.data();
+  const checkInMin = toMin(checkInTime);
+  const checkOutMin = checkOutTime ? toMin(checkOutTime) : null;
+
+  // Recalculate Late
+  const isLate = checkInMin > GRACE;
+  const lateMinutes = isLate ? checkInMin - OFFICE_START : 0;
+  
+  // Recalculate Work Hours & Overtime
+  let workingHours = 0;
+  let overtimeMinutes = 0;
+  let isAppreciated = false;
+  let status = isLate ? C.STATUS.LATE : C.STATUS.PRESENT;
+
+  if (checkOutMin) {
+    const rawMinutes = checkOutMin - checkInMin;
+    workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
+    overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
+    isAppreciated = lateMinutes === 0 && checkOutMin >= APPRECIATION_END;
+    if (workingHours < 4) status = C.STATUS.HALF_DAY;
+  }
+
+  await attRef.update({
+    check_in: checkInTime,
+    check_out: checkOutTime || null,
+    late_minutes: lateMinutes,
+    late_deduction_hours: isLate && !data.is_warning_day ? 1 : 0,
+    working_hours: workingHours,
+    overtime_minutes: overtimeMinutes,
+    is_appreciated: isAppreciated,
+    status,
+    updated_at: new Date(),
+  });
+
+  return { message: 'Attendance timing updated successfully.' };
 };
 
 // ─── Get Monthly Attendance ──────────────────────────────────────────────────
@@ -364,9 +505,11 @@ const getAdminToday = async () => {
     return {
       id: doc.id,
       ...att,
+      check_in_formatted: att.check_in_timestamp ? moment(att.check_in_timestamp.toDate()).tz(TZ).format('DD MMM YYYY, hh:mm A') : null,
+      check_out_formatted: att.check_out_timestamp ? moment(att.check_out_timestamp.toDate()).tz(TZ).format('DD MMM YYYY, hh:mm A') : null,
       full_name: emp.full_name || null,
       designation: emp.designation || null,
-      employee_id: emp.employee_id || att.employee_id // prefer actual employee_id over UID if available
+      employee_id: emp.employee_id || att.employee_id 
     };
   });
 
@@ -380,4 +523,4 @@ const getAdminToday = async () => {
   return { summary, data };
 };
 
-module.exports = { checkIn, checkOut, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord };
+module.exports = { checkIn, checkOut, autoCheckOutAll, editAttendanceTiming, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord };

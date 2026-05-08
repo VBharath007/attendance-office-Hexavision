@@ -71,7 +71,41 @@ const getAdminToday = async (req, res) => {
   }
 };
 
-module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary };
+const getAdminEmployeeMonthly = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    
+    const history = await attendanceService.getMonthlyAttendance(employeeId, month, year);
+    const summary = await attendanceService.computeMonthlySummary(employeeId, month, year);
+    
+    res.json({ 
+      success: true, 
+      data: {
+        records: history.records,
+        summary: summary
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const editTiming = async (req, res) => {
+  try {
+    const { employeeId, date, checkInTime, checkOutTime } = req.body;
+    if (!employeeId || !date || !checkInTime) {
+      return res.status(400).json({ success: false, message: 'employeeId, date, and checkInTime are required.' });
+    }
+    const result = await attendanceService.editAttendanceTiming(employeeId, date, checkInTime, checkOutTime);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary, getAdminEmployeeMonthly, editTiming };
 
 
 
