@@ -49,11 +49,11 @@ app.get('/setup-admin', async (req, res) => {
   try {
     const { db, auth } = require('./src/config/firebase');
     const bcrypt = require('bcryptjs');
-    
+
     console.log('🚀 Running Master Setup...');
     const hashed = await bcrypt.hash('admin123', 12);
     const adminData = { username: 'admin', password: hashed, full_name: 'Hexavision Admin', role: 'admin' };
-    
+
     // Check if exists
     const existing = await db.collection('admins').where('username', '==', 'admin').get();
     if (existing.empty) {
@@ -75,6 +75,6 @@ app.use('/api/employees', employeeRoutes);
 app.get('/', (req, res) => res.send('Hexavision Attendance API is running! 🚀'));
 
 const PORT = process.env.PORT || 8081;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 });
