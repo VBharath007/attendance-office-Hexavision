@@ -470,63 +470,10 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     }
     return s + (wh || 0);
   }, 0);
-  const totalLateDeductHours = records.reduce((s, r) => s + (r.late_deduction_hours || 0), 0);
-
-    .get();
-
-  const yearlyLeaves = yearlyLeaveSnap.docs.map(d => d.data())
-    .filter(l => {
-      const d = l.from_date || l.permission_date;
-      if (!d) return false;
-      return parseInt(d.split('-')[0]) === year;
-    });
-
-  const monthlyLeaves = yearlyLeaves.filter(l => {
-    const d = l.from_date || l.permission_date;
-    return parseInt(d.split('-')[1]) === month;
-  });
-
-  // Calculate Sick Leaves (12 per year, but isolated deduction for this month)
-  const sickLeavesTakenThisYear = yearlyLeaves.filter(l => l.leave_type === 'sick').reduce((s, l) => s + (l.total_days || 0), 0);
-  const sickLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'sick').reduce((s, l) => s + (l.total_days || 0), 0);
-  const sickLeavesBeforeThisMonth = Math.max(0, sickLeavesTakenThisYear - sickLeavesTakenThisMonth);
-  
-  // Taxable sick days this month: Any sick leave taken AFTER the 12-day yearly limit is reached.
-  // Example: used 10 before this month, take 5 this month. 12-10=2 free days left. 5-2=3 taxable days.
-  const freeSickDaysRemaining = Math.max(0, 12 - sickLeavesBeforeThisMonth);
-  const taxableSickDays = Math.max(0, sickLeavesTakenThisMonth - freeSickDaysRemaining);
-
-  // Calculate Casual Leaves (1 per month limit)
-  const casualLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'casual').reduce((s, l) => s + (l.total_days || 0), 0);
-  const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - 1);
-
-  // Unpaid Leaves
-  const unpaidLeaveDays = monthlyLeaves.filter(l => l.leave_type === 'unpaid').reduce((s, l) => s + (l.total_days || 0), 0);
-
-  // Half Days
-  const leaveHalfDays = monthlyLeaves.filter(l => l.leave_type === 'half_day').length;
-  const totalHalfDaysCount = halfDays + leaveHalfDays;
-  const halfDayDeductionDays = totalHalfDaysCount * 0.5;
-
-  // Permission Hours
-  const permissionLeaves = monthlyLeaves.filter(l => l.leave_type === 'permission_hours').sort((a, b) => a.permission_date.localeCompare(b.permission_date));
-  const distinctPermissionDays = [...new Set(permissionLeaves.map(l => l.permission_date))];
-  
-  let taxablePermissionHours = 0;
-  if (distinctPermissionDays.length > 3) {
-    const taxableDays = new Set(distinctPermissionDays.slice(3));
-    taxablePermissionHours = permissionLeaves
-      .filter(l => taxableDays.has(l.permission_date))
-      .reduce((s, l) => s + (l.permission_hours || 0), 0);
-  }
-
-  // Absent days (unrecorded)
-  const unrecordedDays = Math.max(0, totalWorkingDays - presentDays - totalHalfDaysCount * 0.5 - sickLeavesTakenThisMonth - casualLeavesTakenThisMonth - unpaidLeaveDays);
 
   const dailyRate = monthlySalary / 30; // Always 30 days divisor
   const hourlyRate = dailyRate / 9; // 9 hours working day
 
-  // 🕒 Late Deduction Logic: 1st & 2nd are free. 3rd+ deducts 1 hour.
   // 🕒 Late Arrival Logic: Count all days where employee was late
   const lateDaysCount = records.filter(r => (r.late_minutes || 0) > 0).length;
   // Taxable lates: only those that are NOT warning days
@@ -539,8 +486,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2));
   const permissionDeduction = parseFloat((taxablePermissionHours * hourlyRate).toFixed(2));
   const halfDayDeduction = parseFloat((halfDayDeductionDays * dailyRate).toFixed(2));
-  const unrecordedDays = actualAbsents; // Only past days
-  const absentDeduction = parseFloat((unrecordedDays * dailyRate).toFixed(2));
+  const absentDeduction = parseFloat((actualAbsents * dailyRate).toFixed(2));
   
   const leaveDeduction = parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2));
   const totalDeduction = parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2));
