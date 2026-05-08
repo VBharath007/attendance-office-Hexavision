@@ -231,23 +231,56 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const totalWorkingHours = records.reduce((s, r) => s + (r.working_hours || 0), 0);
   const totalLateDeductHours = records.reduce((s, r) => s + (r.late_deduction_hours || 0), 0);
 
-  // Approved leaves this month
-  const leaveSnap = await db.collection('leaves')
+  // Approved leaves for the year
+  const yearlyLeaveSnap = await db.collection('leaves')
     .where('employee_id', '==', employeeId)
     .where('status', '==', 'approved')
     .get();
-  const leaves = leaveSnap.docs.map(d => d.data())
+
+  const yearlyLeaves = yearlyLeaveSnap.docs.map(d => d.data())
     .filter(l => {
       const d = l.from_date || l.permission_date;
       if (!d) return false;
-      const [y, m] = d.split('-').map(Number);
-      return y === year && m === month;
+      return parseInt(d.split('-')[0]) === year;
     });
 
-  const earnedLeaveUsed = leaves.filter(l => l.leave_type === 'earned').reduce((s, l) => s + (l.total_days || 0), 0);
-  const unpaidLeaveDays = leaves.filter(l => l.leave_type === 'unpaid').reduce((s, l) => s + (l.total_days || 0), 0);
-  const permissionHours = leaves.filter(l => l.leave_type === 'permission_hours').reduce((s, l) => s + (l.permission_hours || 0), 0);
-  const absentDays = Math.max(0, totalWorkingDays - presentDays - halfDays * 0.5 - earnedLeaveUsed - unpaidLeaveDays);
+  const monthlyLeaves = yearlyLeaves.filter(l => {
+    const d = l.from_date || l.permission_date;
+    return parseInt(d.split('-')[1]) === month;
+  });
+
+  // Calculate Sick Leaves
+  const sickLeavesTakenThisYear = yearlyLeaves.filter(l => l.leave_type === 'sick').reduce((s, l) => s + (l.total_days || 0), 0);
+  const sickLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'sick').reduce((s, l) => s + (l.total_days || 0), 0);
+  const previousSickLeavesTakenThisYear = sickLeavesTakenThisYear - sickLeavesTakenThisMonth;
+  const taxableSickDays = Math.max(0, sickLeavesTakenThisMonth - Math.max(0, 12 - previousSickLeavesTakenThisYear));
+
+  // Calculate Casual Leaves
+  const casualLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'casual').reduce((s, l) => s + (l.total_days || 0), 0);
+  const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - 1);
+
+  // Unpaid Leaves
+  const unpaidLeaveDays = monthlyLeaves.filter(l => l.leave_type === 'unpaid').reduce((s, l) => s + (l.total_days || 0), 0);
+
+  // Half Days
+  const leaveHalfDays = monthlyLeaves.filter(l => l.leave_type === 'half_day').length;
+  const totalHalfDaysCount = halfDays + leaveHalfDays;
+  const halfDayDeductionDays = totalHalfDaysCount * 0.5;
+
+  // Permission Hours
+  const permissionLeaves = monthlyLeaves.filter(l => l.leave_type === 'permission_hours').sort((a, b) => a.permission_date.localeCompare(b.permission_date));
+  const distinctPermissionDays = [...new Set(permissionLeaves.map(l => l.permission_date))];
+  
+  let taxablePermissionHours = 0;
+  if (distinctPermissionDays.length > 3) {
+    const taxableDays = new Set(distinctPermissionDays.slice(3));
+    taxablePermissionHours = permissionLeaves
+      .filter(l => taxableDays.has(l.permission_date))
+      .reduce((s, l) => s + (l.permission_hours || 0), 0);
+  }
+
+  // Absent days (unrecorded)
+  const unrecordedDays = Math.max(0, totalWorkingDays - presentDays - totalHalfDaysCount * 0.5 - sickLeavesTakenThisMonth - casualLeavesTakenThisMonth - unpaidLeaveDays);
 
   const dailyRate = monthlySalary / 30; // Always 30 days divisor
   const hourlyRate = dailyRate / 9; // 9 hours working day
@@ -257,13 +290,15 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const taxableLateDays = Math.max(0, lateDaysCount - 2);
   const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2));
 
-  // 🌴 Leave Deduction Logic: 1st leave is free.
-  const totalLeavesTaken = earnedLeaveUsed + unpaidLeaveDays;
-  const taxableLeaveDays = Math.max(0, totalLeavesTaken - 1);
-  const leaveDeduction = parseFloat((taxableLeaveDays * dailyRate).toFixed(2));
-
-  const absentDeduction = parseFloat((absentDays * dailyRate).toFixed(2));
+  // Deductions
+  const sickDeduction = parseFloat((taxableSickDays * dailyRate).toFixed(2));
+  const casualDeduction = parseFloat((taxableCasualDays * dailyRate).toFixed(2));
+  const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2));
+  const permissionDeduction = parseFloat((taxablePermissionHours * hourlyRate).toFixed(2));
+  const halfDayDeduction = parseFloat((halfDayDeductionDays * dailyRate).toFixed(2));
+  const absentDeduction = parseFloat((unrecordedDays * dailyRate).toFixed(2));
   
+  const leaveDeduction = parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2));
   const totalDeduction = parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2));
   const netSalary = parseFloat(Math.max(0, monthlySalary - totalDeduction).toFixed(2));
 
@@ -272,11 +307,13 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     month, year,
     total_working_days: totalWorkingDays,
     present_days: presentDays,
-    absent_days: parseFloat(absentDays.toFixed(2)),
+    absent_days: parseFloat(unrecordedDays.toFixed(2)),
     late_days: lateDaysCount,
     taxable_late_days: taxableLateDays,
-    leave_days: totalLeavesTaken,
-    taxable_leave_days: taxableLeaveDays,
+    leave_days: sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5,
+    taxable_leave_days: taxableSickDays + taxableCasualDays + unpaidLeaveDays,
+    sick_leave_used_year: sickLeavesTakenThisYear,
+    casual_leave_used_month: casualLeavesTakenThisMonth,
     gross_salary: monthlySalary,
     daily_rate: parseFloat(dailyRate.toFixed(2)),
     hourly_rate: parseFloat(hourlyRate.toFixed(2)),
