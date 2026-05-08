@@ -374,9 +374,43 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const holidaySnap = await db.collection('holidays').get();
   const holidays = new Set(holidaySnap.docs.map(d => d.data().date));
   let totalWorkingDays = 0;
+  let expectedDaysUpToNow = 0;
+  let remainingDays = 0;
+  const now = moment().tz(TZ);
+  
   for (let d = 1; d <= daysInMonth; d++) {
     const day = moment(`${year}-${month}-${d}`, 'YYYY-M-D');
-    if (day.day() !== 0 && !holidays.has(day.format('YYYY-MM-DD'))) totalWorkingDays++;
+    const isSunday = day.day() === 0;
+    const isHoliday = holidays.has(day.format('YYYY-MM-DD'));
+    
+    if (!isSunday && !isHoliday) {
+      totalWorkingDays++;
+      if (day.isSame(now, 'day') || day.isAfter(now, 'day')) {
+        remainingDays++;
+      } else {
+        expectedDaysUpToNow++;
+      }
+    }
+  }
+  
+  const presentDaysSet = new Set(records.map(r => r.date));
+  const leaveDaysSet = new Set(monthlyLeaves.flatMap(l => {
+    // If leave has a date range, expansion is needed, but assuming simple for now
+    return [l.date]; // Simplified for now, usually leaves have a date field
+  }));
+  
+  // More accurate absent count: days before today that are not Sunday, not Holiday, and have no record
+  let actualAbsents = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const day = moment(`${year}-${month}-${d}`, 'YYYY-M-D');
+    if (day.isBefore(now, 'day')) {
+      const dateStr = day.format('YYYY-MM-DD');
+      const isSunday = day.day() === 0;
+      const isHoliday = holidays.has(dateStr);
+      if (!isSunday && !isHoliday && !presentDaysSet.has(dateStr)) {
+        actualAbsents++;
+      }
+    }
   }
 
   const presentDays = records.filter(r => ['present', 'late', 'half_day'].includes(r.status)).length;
@@ -459,8 +493,10 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const hourlyRate = dailyRate / 9; // 9 hours working day
 
   // 🕒 Late Deduction Logic: 1st & 2nd are free. 3rd+ deducts 1 hour.
-  const lateDaysCount = records.filter(r => r.status === 'late').length;
-  const taxableLateDays = Math.max(0, lateDaysCount - 2);
+  // 🕒 Late Arrival Logic: Count all days where employee was late
+  const lateDaysCount = records.filter(r => (r.late_minutes || 0) > 0).length;
+  // Taxable lates: only those that are NOT warning days
+  const taxableLateDays = records.filter(r => (r.late_minutes || 0) > 0 && !r.is_warning_day).length;
   const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2));
 
   // Deductions
@@ -469,6 +505,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2));
   const permissionDeduction = parseFloat((taxablePermissionHours * hourlyRate).toFixed(2));
   const halfDayDeduction = parseFloat((halfDayDeductionDays * dailyRate).toFixed(2));
+  const unrecordedDays = actualAbsents; // Only past days
   const absentDeduction = parseFloat((unrecordedDays * dailyRate).toFixed(2));
   
   const leaveDeduction = parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2));
@@ -480,7 +517,8 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     month, year,
     total_working_days: totalWorkingDays,
     present_days: presentDays,
-    absent_days: parseFloat(unrecordedDays.toFixed(2)),
+    absent_days: actualAbsents,
+    remaining_days: remainingDays,
     late_days: lateDaysCount,
     taxable_late_days: taxableLateDays,
     leave_days: sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5,
