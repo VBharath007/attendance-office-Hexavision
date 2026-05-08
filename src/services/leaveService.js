@@ -51,5 +51,26 @@ const reviewLeave = async (id, { status, admin_remarks }) => {
   return { id, status };
 };
 
-module.exports = { applyLeave, getEmployeeLeaves, getPendingLeaves, reviewLeave };
+const getAdminLeaveHistory = async () => {
+  const leavesSnap = await db.collection('leaves').orderBy('created_at', 'desc').get();
+  const empSnap = await db.collection('employees').get();
+  const employees = {};
+  empSnap.docs.forEach(doc => { employees[doc.id] = doc.data(); });
+
+  const data = leavesSnap.docs.map(doc => {
+    const leave = doc.data();
+    const emp = employees[leave.employee_id] || {};
+    return {
+      id: doc.id,
+      ...leave,
+      full_name: emp.full_name || 'Unknown',
+      designation: emp.designation || 'Staff',
+      employee_id_display: emp.employee_id || leave.employee_id,
+    };
+  });
+
+  return data;
+};
+
+module.exports = { applyLeave, getEmployeeLeaves, getPendingLeaves, reviewLeave, getAdminLeaveHistory };
 

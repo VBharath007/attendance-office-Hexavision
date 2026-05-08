@@ -36,5 +36,14 @@ const reviewLeave = async (req, res) => {
   }
 };
 
-module.exports = { applyLeave, getMyLeaves, getPendingLeaves, reviewLeave };
+const getAllLeaveHistory = async (req, res) => {
+  try {
+    const leaves = await leaveService.getAdminLeaveHistory();
+    res.json({ success: true, data: leaves });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { applyLeave, getMyLeaves, getPendingLeaves, reviewLeave, getAllLeaveHistory };
 

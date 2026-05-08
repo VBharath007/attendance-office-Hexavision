@@ -5,13 +5,17 @@ const C = require('../config/constants');
 const TZ = C.TIMEZONE;
 const toMin = (t) => { 
   if (!t) return 0;
+  // Handle "hh:mm AM/PM" format
   if (t.includes(' ')) {
-    const [time, modifier] = t.split(' ');
-    let [h, m] = time.split(':').map(Number);
+    const parts = t.split(' ');
+    const timePart = parts[0];
+    const modifier = parts[1].toUpperCase();
+    let [h, m] = timePart.split(':').map(Number);
     if (h === 12) h = 0;
-    if (modifier === 'PM' || modifier === 'pm') h += 12;
+    if (modifier === 'PM') h += 12;
     return h * 60 + m;
   }
+  // Handle "HH:mm" format (24h)
   const [h, m] = t.split(':').map(Number); 
   return h * 60 + m; 
 };
