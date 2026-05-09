@@ -72,16 +72,16 @@ const checkIn = async (employeeId, latitude, longitude) => {
 
   if (now.day() === 0) throw new Error('Today is Sunday - no check-in required');
 
-  // Rule 1 & 4: Check-in only allowed between 9:30 AM and 10:10 AM (Regular) or after 6:30 PM (Overtime)
+  // Rule 1 & 4: Check-in allowed between 9:30 AM and 6:30 PM
   const allowedStart = toMin('09:30');
-  const allowedEnd = toMin('10:10');
+  const allowedEnd = OFFICE_END; // 18:30
   const overtimeStart = toMin('18:30');
-  
+
   const isRegularCheckIn = checkInMin >= allowedStart && checkInMin <= allowedEnd;
   const isOvertimeCheckIn = checkInMin >= overtimeStart;
 
   if (!isRegularCheckIn && !isOvertimeCheckIn) {
-    throw new Error('Check-in is only allowed between 09:30 AM and 10:10 AM or after 06:30 PM');
+    throw new Error('Check-in is only allowed between 09:30 AM and 06:30 PM');
   }
 
   const attRef = db.collection('attendance').doc(docId);
@@ -207,8 +207,11 @@ const checkOut = async (employeeId, latitude, longitude) => {
   const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
   const overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
 
-  // Appreciation: on-time arrival AND checkout >= 19:30
-  const isAppreciated = data.late_minutes === 0 && checkOutMin >= APPRECIATION_END;
+  // Appreciation Rule:
+  // ONLY employees who check in BEFORE or AT 10:10 AM can earn a star.
+  // They must also check out at or after 06:30 PM (APPRECIATION_END).
+  const tenTenMin = toMin('10:10');
+  const isAppreciated = checkInMin <= tenTenMin && checkOutMin >= APPRECIATION_END;
 
   let status = data.status;
   if (workingHours < 4) status = C.STATUS.HALF_DAY;
