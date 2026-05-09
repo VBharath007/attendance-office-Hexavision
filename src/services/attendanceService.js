@@ -474,7 +474,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     return s + (wh || 0);
   }, 0);
 
-  const dailyRate = monthlySalary / 30; // Always 30 days divisor
+  const dailyRate = monthlySalary / daysInMonth; 
   const hourlyRate = dailyRate / 9; // 9 hours working day
 
   // 🕒 Late Arrival Logic: Count all days where employee was late
@@ -519,6 +519,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     total_working_hours: parseFloat(totalWorkingHours.toFixed(2)),
     overtime_minutes: records.reduce((s, r) => s + (r.overtime_minutes || 0), 0),
     appreciated_count: appreciationDays,
+    days_in_month: daysInMonth,
     updated_at: new Date(),
   };
 
