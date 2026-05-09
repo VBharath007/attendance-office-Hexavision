@@ -517,9 +517,13 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const hourlyRate = dailyRate / 9; // 9 hours working day
 
   // 🕒 Late Arrival Logic: Count all days where employee was late
-  const lateDaysCount = records.filter(r => (r.late_minutes || 0) > 0).length;
-  // Taxable lates: only those that are NOT warning days
-  const taxableLateDays = records.filter(r => (r.late_minutes || 0) > 0 && !r.is_warning_day).length;
+  const lateRecords = records
+    .filter(r => (r.late_minutes || 0) > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  
+  const lateDaysCount = lateRecords.length;
+  // Taxable lates: only those that exceed the Grace Days limit
+  const taxableLateDays = Math.max(0, lateDaysCount - (C.LATE_WARNING_DAYS || 3));
   const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0;
 
   // Deductions
