@@ -97,13 +97,27 @@ const checkIn = async (employeeId, latitude, longitude) => {
   const currentYear = now.year();
   let warningCount = emp.late_warning_count || 0;
 
+  // Check for approved permission today to waive late penalty
+  const permSnap = await db.collection('leaves')
+    .where('employee_id', '==', employeeId)
+    .where('status', '==', 'approved')
+    .where('leave_type', '==', 'permission_hours')
+    .get();
+
+  const activePermission = permSnap.docs.find(doc => {
+    const d = doc.data();
+    if (d.permission_date !== today) return false;
+    const pEnd = toMin(d.permission_to);
+    return checkInMin <= pEnd + 15; // 15 mins buffer after permission ends
+  });
+
   // Reset monthly warning counter
   if (emp.late_warning_reset_month !== currentMonth || emp.late_warning_reset_year !== currentYear) {
     warningCount = 0;
     await empRef.update({ late_warning_count: 0, late_warning_reset_month: currentMonth, late_warning_reset_year: currentYear });
   }
 
-  const isLate = checkInMin > GRACE;
+  const isLate = checkInMin > GRACE && !activePermission;
   const lateMinutes = isLate ? checkInMin - OFFICE_START : 0;
   const newWarningCount = isLate ? warningCount + 1 : warningCount;
   const isWarningDay = isLate && newWarningCount <= C.LATE_WARNING_DAYS;
@@ -207,11 +221,22 @@ const checkOut = async (employeeId, latitude, longitude) => {
   const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
   const overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
 
-  // Appreciation Rule:
-  // ONLY employees who check in BEFORE or AT 10:10 AM can earn a star.
-  // They must also check out at or after 06:30 PM (APPRECIATION_END).
-  const tenTenMin = toMin('10:10');
-  const isAppreciated = checkInMin <= tenTenMin && checkOutMin >= APPRECIATION_END;
+  const tenTenMin = toMin(C.APPRECIATION_CHECKIN_MAX || '10:10');
+  const appreciationOutMin = toMin(C.APPRECIATION_CHECKOUT_MIN || '19:30');
+  
+  // Check if they have an approved permission for today
+  const permSnap = await db.collection('leaves')
+    .where('employee_id', '==', employeeId)
+    .where('status', '==', 'approved')
+    .where('leave_type', '==', 'permission_hours')
+    .get();
+    
+  const hasApprovedPermission = permSnap.docs.some(doc => doc.data().permission_date === today);
+
+  // Appreciation Logic: 
+  // 1. Regular: In <= 10:10 AM AND Out >= 7:30 PM
+  // 2. Permission: (In <= Permission End OR In <= 10:10) AND Out >= 7:30 PM
+  const isAppreciated = (checkInMin <= tenTenMin || hasApprovedPermission) && checkOutMin >= appreciationOutMin;
 
   let status = data.status;
   if (workingHours < 4) status = C.STATUS.HALF_DAY;
@@ -261,6 +286,20 @@ const autoCheckOutAll = async () => {
   for (const doc of snap.docs) {
     const data = doc.data();
     if (!data.check_in) continue;
+
+    // Rule: Skip employees with approved Client Meeting today
+    const clientMeetingSnap = await db.collection('leaves')
+      .where('employee_id', '==', data.employee_id)
+      .where('status', '==', 'approved')
+      .where('leave_type', '==', C.LEAVE_TYPES.CLIENT_MEETING)
+      .get();
+
+    const hasClientMeeting = clientMeetingSnap.docs.some(ldoc => {
+      const ldata = ldoc.data();
+      return today >= ldata.from_date && today <= ldata.to_date;
+    });
+
+    if (hasClientMeeting) continue;
 
     const checkInMin = toMin(data.check_in);
     const rawMinutes = checkOutMin - checkInMin;

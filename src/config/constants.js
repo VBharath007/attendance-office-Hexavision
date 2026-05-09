@@ -5,10 +5,11 @@ module.exports = {
   APPRECIATION_CHECKOUT_MIN: '19:30', // 7:30 PM
   LUNCH_BREAK_HOURS: 1,
   NET_WORKING_HOURS: 9,
-  LATE_WARNING_DAYS: 2,
+  LATE_WARNING_DAYS: 3,
 
-  LATE_DEDUCTION_FROM_DAY: 3,
+  LATE_DEDUCTION_FROM_DAY: 4,
   EARNED_LEAVES_PER_MONTH: 1,
+  APPRECIATION_CHECKIN_MAX: '10:10',
 
   OFFICE_LAT: 9.932548064389838,
   OFFICE_LNG: 78.14469758285455,
@@ -22,8 +23,9 @@ module.exports = {
   },
 
   LEAVE_TYPES: {
-    EARNED: 'earned', UNPAID: 'unpaid',
+    EARNED: 'earned', UNPAID: 'unpaid', CASUAL: 'casual',
     HALF_DAY: 'half_day', PERMISSION_HOURS: 'permission_hours',
+    CLIENT_MEETING: 'client_meeting',
   },
 
   LEAVE_STATUS: {
