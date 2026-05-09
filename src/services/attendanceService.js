@@ -86,8 +86,29 @@ const checkIn = async (employeeId, latitude, longitude) => {
 
   const attRef = db.collection('attendance').doc(docId);
   const attSnap = await attRef.get();
-  if (attSnap.exists && attSnap.data().check_in) throw new Error('Already checked in today');
+  const data = attSnap.data();
 
+  // ── Handle Overtime Check-In ──
+  if (attSnap.exists && data.check_in && data.check_out) {
+    if (data.overtime_check_in) throw new Error('Already checked in for overtime today');
+    
+    await attRef.update({
+      overtime_check_in: timeNow,
+      overtime_check_in_timestamp: new Date(),
+      overtime_check_in_lat: latitude || null,
+      overtime_check_in_lng: longitude || null,
+      updated_at: new Date(),
+    });
+
+    return {
+      isOvertime: true,
+      message: '✅ Overtime check-in successful! Good luck with the extra work.',
+    };
+  }
+
+  if (attSnap.exists && data.check_in) throw new Error('Already checked in today');
+
+  // ... (rest of the logic for normal check-in)
   // Get employee warning state
   const empRef = db.collection('employees').doc(employeeId);
   const empSnap = await empRef.get();
@@ -150,9 +171,7 @@ const checkIn = async (employeeId, latitude, longitude) => {
     check_in_timestamp: new Date(),
     check_in_lat: latitude || null,
     check_in_lng: longitude || null,
-    status: isOvertimeCheckIn ? 'present' : (isLate ? C.STATUS.LATE : C.STATUS.PRESENT),
-    is_overtime_entry: isOvertimeCheckIn,
-    is_appreciated: isOvertimeCheckIn,
+    status: isLate ? C.STATUS.LATE : C.STATUS.PRESENT,
     late_minutes: lateMinutes,
     late_deduction_hours: lateDeductionHours,
     is_warning_day: isWarningDay,
@@ -162,7 +181,7 @@ const checkIn = async (employeeId, latitude, longitude) => {
     is_appreciated: false,
     created_at: new Date(),
     updated_at: new Date(),
-  });
+  }, { merge: true });
 
   await batch.commit();
 
@@ -211,32 +230,48 @@ const checkOut = async (employeeId, latitude, longitude) => {
   const attRef = db.collection('attendance').doc(docId);
   const attSnap = await attRef.get();
   if (!attSnap.exists || !attSnap.data().check_in) throw new Error('Please check in first');
-  if (attSnap.data().check_out) throw new Error('Already checked out today');
-
+  
   const data = attSnap.data();
+
+  // ── Handle Overtime Check-Out ──
+  if (data.overtime_check_in && !data.overtime_check_out) {
+    const otInMin = toMin(data.overtime_check_in);
+    const otOutMin = toMin(now.format('HH:mm'));
+    const otMinutes = Math.max(0, otOutMin - otInMin);
+    
+    // Appreciation Rule: If they worked at least 1 hour of overtime
+    // AND they weren't too late in the morning (before 10:10)
+    const tenTenMin = toMin('10:10');
+    const normalCheckInMin = toMin(data.check_in);
+    const isAppreciated = (normalCheckInMin <= tenTenMin) && (otMinutes >= 60);
+
+    await attRef.update({
+      overtime_check_out: timeNow,
+      overtime_check_out_timestamp: new Date(),
+      overtime_check_out_lat: latitude || null,
+      overtime_check_out_lng: longitude || null,
+      overtime_minutes: (data.overtime_minutes || 0) + otMinutes,
+      is_appreciated: isAppreciated,
+      updated_at: new Date(),
+    });
+
+    return {
+      isOvertime: true,
+      isAppreciated,
+      message: isAppreciated 
+        ? '🌟 Outstanding! You earned an Appreciation badge for your extra work today!'
+        : '✅ Overtime checkout successful. Great job!',
+    };
+  }
+
+  if (data.check_out) throw new Error('Already checked out today');
+
   const checkInMin = toMin(data.check_in);
   const checkOutMin = toMin(now.format('HH:mm'));
 
   const rawMinutes = checkOutMin - checkInMin;
   const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
   const overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
-
-  const tenTenMin = toMin(C.APPRECIATION_CHECKIN_MAX || '10:10');
-  const appreciationOutMin = toMin(C.APPRECIATION_CHECKOUT_MIN || '19:30');
-  
-  // Check if they have an approved permission for today
-  const permSnap = await db.collection('leaves')
-    .where('employee_id', '==', employeeId)
-    .where('status', '==', 'approved')
-    .where('leave_type', '==', 'permission_hours')
-    .get();
-    
-  const hasApprovedPermission = permSnap.docs.some(doc => doc.data().permission_date === today);
-
-  // Appreciation Logic: 
-  // 1. Regular: In <= 10:10 AM AND Out >= 7:30 PM
-  // 2. Permission: (In <= Permission End OR In <= 10:10) AND Out >= 7:30 PM
-  const isAppreciated = (checkInMin <= tenTenMin || hasApprovedPermission) && checkOutMin >= appreciationOutMin;
 
   let status = data.status;
   if (workingHours < 4) status = C.STATUS.HALF_DAY;
@@ -248,7 +283,6 @@ const checkOut = async (employeeId, latitude, longitude) => {
     check_out_lng: longitude || null,
     working_hours: workingHours,
     overtime_minutes: overtimeMinutes,
-    is_appreciated: isAppreciated,
     status,
     updated_at: new Date(),
   });
@@ -257,10 +291,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
     checkOutTime: timeNow,
     workingHours,
     overtimeMinutes,
-    isAppreciated,
-    message: isAppreciated
-      ? '🌟 Great work! You earned an Appreciation badge today!'
-      : `✅ Checked out. Worked ${workingHours.toFixed(1)} hours today`,
+    message: `✅ Checked out. Worked ${workingHours.toFixed(1)} hours today`,
   };
 };
 
