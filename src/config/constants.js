@@ -37,4 +37,9 @@ module.exports = {
   },
 
   TIMEZONE: 'Asia/Kolkata',
+
+  // Leave Policies
+  SICK_LEAVES_PER_YEAR: 12,
+  CASUAL_LEAVES_PER_MONTH: 1,
+  FREE_PERMISSION_MIN_PER_MONTH: 60, // 1 hour free permission
 };

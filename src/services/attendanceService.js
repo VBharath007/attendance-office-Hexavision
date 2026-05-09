@@ -447,11 +447,11 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const leaveHalfDays = monthlyLeaves.filter(l => l.leave_type === 'half_day').length;
   
   const sickLeavesTakenThisYear = yearlyLeaves.filter(l => l.leave_type === 'sick').length;
-  const taxableSickDays = Math.max(0, sickLeavesTakenThisYear - C.SICK_LEAVES_PER_YEAR);
-  const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - C.CASUAL_LEAVES_PER_MONTH);
+  const taxableSickDays = Math.max(0, sickLeavesTakenThisYear - (C.SICK_LEAVES_PER_YEAR || 12));
+  const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - (C.CASUAL_LEAVES_PER_MONTH || 1));
   
   const totalPermissionMinutes = permissionLeavesThisMonth.reduce((s, l) => s + (l.duration_minutes || 0), 0);
-  const taxablePermissionMinutes = Math.max(0, totalPermissionMinutes - C.FREE_PERMISSION_MIN_PER_MONTH);
+  const taxablePermissionMinutes = Math.max(0, totalPermissionMinutes - (C.FREE_PERMISSION_MIN_PER_MONTH || 60));
   const taxablePermissionHours = taxablePermissionMinutes / 60;
   
   const totalHalfDaysCount = halfDays + leaveHalfDays;
@@ -467,7 +467,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
       const outMin = toMin(r.check_out);
       if (outMin > inMin) {
         const rawHrs = (outMin - inMin) / 60;
-        const lunchDed = rawHrs > 6 ? C.LUNCH_BREAK_HOURS : 0;
+        const lunchDed = rawHrs > 6 ? (C.LUNCH_BREAK_HOURS || 1) : 0;
         wh = parseFloat(Math.max(0, rawHrs - lunchDed).toFixed(2));
       }
     }
@@ -481,19 +481,19 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const lateDaysCount = records.filter(r => (r.late_minutes || 0) > 0).length;
   // Taxable lates: only those that are NOT warning days
   const taxableLateDays = records.filter(r => (r.late_minutes || 0) > 0 && !r.is_warning_day).length;
-  const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2));
+  const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0;
 
   // Deductions
-  const sickDeduction = parseFloat((taxableSickDays * dailyRate).toFixed(2));
-  const casualDeduction = parseFloat((taxableCasualDays * dailyRate).toFixed(2));
-  const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2));
-  const permissionDeduction = parseFloat((taxablePermissionHours * hourlyRate).toFixed(2));
-  const halfDayDeduction = parseFloat((halfDayDeductionDays * dailyRate).toFixed(2));
-  const absentDeduction = parseFloat((actualAbsents * dailyRate).toFixed(2));
+  const sickDeduction = parseFloat((taxableSickDays * dailyRate).toFixed(2)) || 0;
+  const casualDeduction = parseFloat((taxableCasualDays * dailyRate).toFixed(2)) || 0;
+  const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2)) || 0;
+  const permissionDeduction = parseFloat((taxablePermissionHours * hourlyRate).toFixed(2)) || 0;
+  const halfDayDeduction = parseFloat((halfDayDeductionDays * dailyRate).toFixed(2)) || 0;
+  const absentDeduction = parseFloat((actualAbsents * dailyRate).toFixed(2)) || 0;
   
-  const leaveDeduction = parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2));
-  const totalDeduction = parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2));
-  const netSalary = parseFloat(Math.max(0, monthlySalary - totalDeduction).toFixed(2));
+  const leaveDeduction = parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2)) || 0;
+  const totalDeduction = parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2)) || 0;
+  const netSalary = parseFloat(Math.max(0, monthlySalary - totalDeduction).toFixed(2)) || 0;
 
   const summary = {
     employee_id: employeeId,
