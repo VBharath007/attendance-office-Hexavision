@@ -169,24 +169,6 @@ exports.createSuperAdmin = functions.https.onRequest(async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════
-// CRON JOBS / SCHEDULED FUNCTIONS
-// ═══════════════════════════════════════════════════
-
-// 1. Auto Checkout at 6:30 PM
-exports.autoCheckOutCron = functions.pubsub.schedule('30 18 * * *')
-  .timeZone(C.TIMEZONE)
-  .onRun(async (context) => {
-    try {
-      const result = await autoCheckOutAll();
-      console.log(`Auto Check-Out Completed: ${result.processed} employees checked out.`);
-      return null;
-    } catch (e) {
-      console.error('Auto Check-Out Failed:', e);
-      return null;
-    }
-  });
-
 // 2. Notification Reminders (9:30 AM, 10:00 AM, 10:10 AM, 6:30 PM)
 const sendReminders = async (title, body) => {
   const snap = await db.collection('employees').where('status', '==', 'active').get();
