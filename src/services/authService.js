@@ -67,16 +67,28 @@ const loginEmployee = async (identifier, password) => {
 const adminLogin = async (username, password) => {
   let adminSnap = await db.collection('admins').where('username', '==', username).limit(1).get();
   
-  if (adminSnap.empty) throw new Error('Invalid admin credentials');
-  const adminData = adminSnap.docs[0].data();
+  // 🚀 AUTO-CREATE: If no admins exist at all, create a default one
+  const allAdmins = await db.collection('admins').limit(1).get();
+  if (allAdmins.empty && username === 'admin') {
+    console.log('👑 No admins found. Creating default admin...');
+    const hashed = await bcrypt.hash('admin123', 12);
+    const newAdmin = { username: 'admin', password: hashed, full_name: 'Super Admin', role: 'admin' };
+    const docRef = await db.collection('admins').add(newAdmin);
+    adminSnap = await docRef.get();
+  }
+
+  if (adminSnap.empty || (adminSnap.docs && adminSnap.docs.length === 0)) throw new Error('Invalid admin credentials');
+  
+  const adminDoc = adminSnap.docs ? adminSnap.docs[0] : adminSnap;
+  const adminData = adminDoc.data();
 
   const isMatch = await bcrypt.compare(password, adminData.password);
   if (!isMatch) throw new Error('Invalid admin credentials');
 
-  const user = { uid: adminSnap.docs[0].id, role: 'admin', username: adminData.username };
+  const user = { uid: adminDoc.id, role: 'admin', username: adminData.username };
   const accessToken = tokenService.generateAccessToken(user);
   const refreshToken = await tokenService.generateRefreshToken(user);
-  const customToken = await auth.createCustomToken(adminSnap.docs[0].id, { role: 'admin' });
+  const customToken = await auth.createCustomToken(adminDoc.id, { role: 'admin' });
 
   const { password: _, ...adminProfile } = adminData;
   return { 
