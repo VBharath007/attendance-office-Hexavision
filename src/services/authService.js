@@ -1,21 +1,22 @@
 const { auth, db } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
+const tokenService = require('./tokenService');
 
 const registerEmployee = async (data) => {
   console.log('🚀 Registration started for:', data.employee_id);
   const { employee_id, full_name, email, phone, password, department_id, designation, join_date } = data;
 
   try {
-    console.log('🔍 Checking if employee exists in collection "employees"...');
     const existing = await db.collection('employees').where('employee_id', '==', employee_id).limit(1).get();
     if (!existing.empty) throw new Error('Employee ID already registered');
+    
+    const existingEmail = await db.collection('employees').where('email', '==', email).limit(1).get();
+    if (!existingEmail.empty) throw new Error('Email already registered');
   } catch (err) {
-    console.error('❌ Firestore Error during check:', err);
     throw err;
   }
 
-
-  // Firebase Auth
+  // Firebase Auth (Keep it for push notifications and sync if needed)
   const userRecord = await auth.createUser({ email, password, displayName: full_name });
   await auth.setCustomUserClaims(userRecord.uid, { role: 'employee' });
 
@@ -50,47 +51,85 @@ const loginEmployee = async (identifier, password) => {
 
   if (emp.status !== 'active') throw new Error(`Account ${emp.status}`);
 
-  const customToken = await auth.createCustomToken(empSnap.docs[0].id, { role: 'employee' });
-  return { custom_token: customToken, employee: emp };
+  const user = { uid: emp.uid, role: 'employee', employee_id: emp.employee_id };
+  const accessToken = tokenService.generateAccessToken(user);
+  const refreshToken = await tokenService.generateRefreshToken(user);
+  const customToken = await auth.createCustomToken(emp.uid, { role: 'employee' });
+
+  return { 
+    access_token: accessToken, 
+    refresh_token: refreshToken,
+    custom_token: customToken,
+    employee: { ...emp, password: null } 
+  };
 };
 
 const adminLogin = async (username, password) => {
   let adminSnap = await db.collection('admins').where('username', '==', username).limit(1).get();
   
-  // 🚀 AUTO-CREATE: If no admins exist at all, create a default one
-  const allAdmins = await db.collection('admins').limit(1).get();
-  if (allAdmins.empty && username === 'admin') {
-    console.log('👑 No admins found. Creating default admin...');
-    const hashed = await bcrypt.hash('admin123', 12);
-    const newAdmin = { username: 'admin', password: hashed, full_name: 'Super Admin', role: 'admin' };
-    const docRef = await db.collection('admins').add(newAdmin);
-    const customToken = await auth.createCustomToken(docRef.id, { role: 'admin' });
-    return { custom_token: customToken, admin: { ...newAdmin, password: null } };
-  }
-
   if (adminSnap.empty) throw new Error('Invalid admin credentials');
   const adminData = adminSnap.docs[0].data();
 
   const isMatch = await bcrypt.compare(password, adminData.password);
   if (!isMatch) throw new Error('Invalid admin credentials');
 
+  const user = { uid: adminSnap.docs[0].id, role: 'admin', username: adminData.username };
+  const accessToken = tokenService.generateAccessToken(user);
+  const refreshToken = await tokenService.generateRefreshToken(user);
   const customToken = await auth.createCustomToken(adminSnap.docs[0].id, { role: 'admin' });
+
   const { password: _, ...adminProfile } = adminData;
-  return { custom_token: customToken, admin: { ...adminProfile, role: 'admin' } };
+  return { 
+    access_token: accessToken, 
+    refresh_token: refreshToken,
+    custom_token: customToken,
+    admin: { ...adminProfile, role: 'admin' } 
+  };
 };
 
+const refreshAuthToken = async (refreshToken) => {
+  const decoded = tokenService.verifyToken(refreshToken, process.env.JWT_REFRESH_SECRET);
+  if (!decoded) throw new Error('Invalid refresh token');
 
+  // Check if session exists in DB
+  const sessionDoc = await db.collection('sessions').doc(refreshToken.substring(0, 20)).get();
+  if (!sessionDoc.exists) throw new Error('Session expired or revoked');
+
+  const userProfile = await getUserProfile(decoded.uid, 'employee'); // Default to employee, or check claims
+  if (!userProfile) throw new Error('User not found');
+
+  const accessToken = tokenService.generateAccessToken({ 
+    uid: userProfile.uid, 
+    role: userProfile.role,
+    employee_id: userProfile.employee_id 
+  });
+
+  return { access_token: accessToken };
+};
+
+const logoutUser = async (refreshToken) => {
+  return await tokenService.revokeToken(refreshToken);
+};
 
 const getUserProfile = async (uid, role) => {
-  if (role === 'admin') {
-    const doc = await db.collection('admins').doc(uid).get();
-    return doc.exists ? { ...doc.data(), role: 'admin' } : null;
-  } else {
-    const doc = await db.collection('employees').doc(uid).get();
-    return doc.exists ? { ...doc.data(), role: 'employee' } : null;
-  }
+  // Try employee first
+  let doc = await db.collection('employees').doc(uid).get();
+  if (doc.exists) return { ...doc.data(), role: 'employee' };
+  
+  // Try admin
+  doc = await db.collection('admins').doc(uid).get();
+  if (doc.exists) return { ...doc.data(), role: 'admin' };
+  
+  return null;
 };
 
-module.exports = { registerEmployee, loginEmployee, adminLogin, getUserProfile };
+module.exports = { 
+  registerEmployee, 
+  loginEmployee, 
+  adminLogin, 
+  getUserProfile, 
+  refreshAuthToken,
+  logoutUser
+};
 
 
