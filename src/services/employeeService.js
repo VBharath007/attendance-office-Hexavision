@@ -1,4 +1,5 @@
 const { db } = require('../config/firebase');
+const isolationService = require('./isolationService');
 
 const getAllEmployees = async (status = null) => {
   let query = db.collection('employees');
@@ -8,8 +9,6 @@ const getAllEmployees = async (status = null) => {
   const snap = await query.get();
   return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 };
-
-
 
 const updateSalary = async (uid, salaryData) => {
   const { monthly_salary, bank_name, account_number, ifsc_code } = salaryData;
@@ -31,5 +30,8 @@ const approveEmployee = async (uid) => {
   return { uid, status: 'active' };
 };
 
-module.exports = { getAllEmployees, updateSalary, approveEmployee };
+const removeEmployee = async (uid) => {
+  return await isolationService.deleteEmployeeData(uid);
+};
 
+module.exports = { getAllEmployees, updateSalary, approveEmployee, removeEmployee };

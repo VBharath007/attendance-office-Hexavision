@@ -412,16 +412,17 @@ const editAttendanceTiming = async (employeeId, date, checkInTime, checkOutTime)
 
 // ─── Get Monthly Attendance ──────────────────────────────────────────────────
 const getMonthlyAttendance = async (employeeId, month, year) => {
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+
   const snap = await db.collection('attendance')
     .where('employee_id', '==', employeeId)
+    .where('date', '>=', startDate)
+    .where('date', '<=', endDate)
     .get();
 
   const records = snap.docs
     .map(d => d.data())
-    .filter(r => {
-      const [y, m] = r.date.split('-').map(Number);
-      return y === year && m === month;
-    })
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const summarySnap = await db.collection('monthly_summary')
@@ -614,7 +615,10 @@ const getTodayRecord = async (employeeId) => {
 const getAdminToday = async () => {
   const todayStr = moment().tz(TZ).format('YYYY-MM-DD');
   const attSnap = await db.collection('attendance').where('date', '==', todayStr).get();
-  const empSnap = await db.collection('employees').where('status', '==', 'active').get();
+  const empSnap = await db.collection('employees')
+    .where('status', '==', 'active')
+    .select('full_name', 'designation', 'employee_id')
+    .get();
 
   const employees = {};
   empSnap.forEach(doc => {

@@ -29,5 +29,14 @@ const approve = async (req, res) => {
   }
 };
 
-module.exports = { list, setSalary, approve };
+const deleteEmployee = async (req, res) => {
+  try {
+    const result = await employeeService.removeEmployee(req.params.uid);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { list, setSalary, approve, deleteEmployee };
 

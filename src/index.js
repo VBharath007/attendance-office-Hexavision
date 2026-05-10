@@ -33,6 +33,17 @@ app.use('/ai', require('./routes/ai'));
 app.use('/notifications', require('./routes/notifications'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
+// Standard Error Handler
+app.use((err, req, res, next) => {
+  console.error('🔥 API Error:', err);
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
+
 // Main API export
 exports.api = functions.https.onRequest(app);
 
@@ -171,15 +182,22 @@ exports.createSuperAdmin = functions.https.onRequest(async (req, res) => {
 
 // 2. Notification Reminders (9:30 AM, 10:00 AM, 10:10 AM, 6:30 PM)
 const sendReminders = async (title, body) => {
-  const snap = await db.collection('employees').where('status', '==', 'active').get();
+  // Only send to employees with active sessions
+  const sessionsSnap = await db.collection('sessions')
+    .where('is_active', '==', true)
+    .get();
+  
   const tokens = [];
-  snap.docs.forEach(doc => {
+  sessionsSnap.forEach(doc => {
     const data = doc.data();
     if (data.fcm_token) tokens.push(data.fcm_token);
   });
+
   if (tokens.length > 0) {
+    // Remove duplicates
+    const uniqueTokens = [...new Set(tokens)];
     await messaging.sendEachForMulticast({
-      tokens,
+      tokens: uniqueTokens,
       notification: { title, body },
       android: { priority: 'high' }
     });
