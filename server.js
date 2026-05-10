@@ -29,26 +29,12 @@ if (!admin.apps.length && serviceAccount) {
 
 
 const app = express();
-
-// Security Middleware
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-
-app.use(helmet());
 app.use(cors({
-  origin: '*',
+  origin: '*', // Allow all origins for testing
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
-
-// Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: { success: false, message: 'Too many requests, please try again later.' }
-});
-app.use('/api/', limiter);
 
 
 // Import Routes

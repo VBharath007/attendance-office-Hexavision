@@ -8,13 +8,14 @@ if (!admin.apps.length) {
     console.log('🧪 Using Firebase Emulator');
     admin.initializeApp({ projectId: 'attendance-2333a' });
   } else {
+
     let serviceAccount;
     try {
+      serviceAccount = require('../../service-account.json');
+    } catch (e) {
       if (process.env.FIREBASE_SERVICE_ACCOUNT) {
         serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
       }
-    } catch (e) {
-      console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT env var');
     }
 
     if (serviceAccount) {
@@ -24,9 +25,11 @@ if (!admin.apps.length) {
         projectId: serviceAccount.project_id
       });
     } else {
-      console.log('⚠️ No service account found in ENV, using default initialization');
+      console.log('⚠️ No service account found, using default initialization');
       admin.initializeApp();
     }
+
+
   }
 
 
