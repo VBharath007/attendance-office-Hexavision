@@ -66,10 +66,13 @@ const loginEmployee = async (identifier, password, deviceInfo = {}) => {
     await empDoc.ref.update({ fcm_token: deviceInfo.fcm_token, updated_at: new Date() });
   }
 
+  const customToken = await auth.createCustomToken(empDoc.id, { role: 'employee' });
+
   const { password: _, ...employeeProfile } = emp;
   return { 
     access_token: accessToken, 
     refresh_token: refreshToken, 
+    custom_token: customToken,
     session_id: sessionId,
     employee: employeeProfile 
   };
@@ -99,10 +102,13 @@ const adminLogin = async (username, password, deviceInfo = {}) => {
     is_active: true
   });
 
+  const customToken = await auth.createCustomToken(adminDoc.id, { role: 'admin' });
+
   const { password: _, ...adminProfile } = adminData;
   return { 
     access_token: accessToken, 
     refresh_token: refreshToken, 
+    custom_token: customToken,
     session_id: sessionId,
     admin: { ...adminProfile, role: 'admin' } 
   };

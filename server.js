@@ -23,8 +23,11 @@ if (!admin.apps.length && serviceAccount) {
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(helmet());
-app.use(cors());
+// app.use(helmet()); // Commented out to prevent blocking local Flutter Web requests
+app.use(cors({
+  origin: true, // Dynamically allow the origin of the request (e.g., localhost:63724)
+  credentials: true
+}));
 app.use(express.json());
 
 // Import Routes
