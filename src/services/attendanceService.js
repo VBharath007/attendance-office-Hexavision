@@ -435,13 +435,22 @@ const getMonthlyAttendance = async (employeeId, month, year) => {
 // ─── Compute Monthly Summary ─────────────────────────────────────────────────
 const computeMonthlySummary = async (employeeId, month, year) => {
   const empSnap = await db.collection('employees').doc(employeeId).get();
+  if (!empSnap.exists) {
+    console.error(`❌ Employee profile not found for ${employeeId}`);
+    return null; // Or return a basic summary with zeros
+  }
   const emp = empSnap.data();
   const monthlySalary = parseFloat(emp.monthly_salary || 0);
 
   // Get attendance records
   const attSnap = await db.collection('attendance').where('employee_id', '==', employeeId).get();
   const records = attSnap.docs.map(d => d.data())
-    .filter(r => { const [y, m] = r.date.split('-').map(Number); return y === year && m === month; });
+    .filter(r => { 
+      const [y, m] = r.date.split('-').map(Number); 
+      return y === year && m === month; 
+    });
+    
+  console.log(`📊 Summary for ${employeeId}: Found ${attSnap.size} total records, ${records.length} for ${month}/${year}`);
 
   // Get approved leaves
   const yearlyLeaveSnap = await db.collection('leaves')
@@ -545,30 +554,29 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     return s + (wh || 0);
   }, 0);
 
-  const dailyRate = monthlySalary / daysInMonth; 
-  const hourlyRate = dailyRate / 9; // 9 hours working day
+  const dailyRate = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0; 
+  const hourlyRate = dailyRate > 0 ? dailyRate / 9 : 0; // 9 hours working day
 
-  // 🕒 Late Arrival Logic: Count all days where employee was late
+  // 🕒 Late Arrival Logic
   const lateRecords = records
     .filter(r => (r.late_minutes || 0) > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
   
   const lateDaysCount = lateRecords.length;
-  // Taxable lates: only those that exceed the Grace Days limit
   const taxableLateDays = Math.max(0, lateDaysCount - (C.LATE_WARNING_DAYS || 3));
-  const lateDeduction = parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0;
+  const lateDeduction = Math.max(0, parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0);
 
   // Deductions
-  const sickDeduction = parseFloat((taxableSickDays * dailyRate).toFixed(2)) || 0;
-  const casualDeduction = parseFloat((taxableCasualDays * dailyRate).toFixed(2)) || 0;
-  const unpaidLeaveDeduction = parseFloat((unpaidLeaveDays * dailyRate).toFixed(2)) || 0;
-  const permissionDeduction = parseFloat((taxablePermissionHours * hourlyRate).toFixed(2)) || 0;
-  const halfDayDeduction = parseFloat((halfDayDeductionDays * dailyRate).toFixed(2)) || 0;
-  const absentDeduction = parseFloat((actualAbsents * dailyRate).toFixed(2)) || 0;
+  const sickDeduction = Math.max(0, parseFloat((taxableSickDays * dailyRate).toFixed(2)) || 0);
+  const casualDeduction = Math.max(0, parseFloat((taxableCasualDays * dailyRate).toFixed(2)) || 0);
+  const unpaidLeaveDeduction = Math.max(0, parseFloat((unpaidLeaveDays * dailyRate).toFixed(2)) || 0);
+  const permissionDeduction = Math.max(0, parseFloat((taxablePermissionHours * hourlyRate).toFixed(2)) || 0);
+  const halfDayDeduction = Math.max(0, parseFloat((halfDayDeductionDays * dailyRate).toFixed(2)) || 0);
+  const absentDeduction = Math.max(0, parseFloat((actualAbsents * dailyRate).toFixed(2)) || 0);
   
-  const leaveDeduction = parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2)) || 0;
-  const totalDeduction = parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2)) || 0;
-  const netSalary = parseFloat(Math.max(0, monthlySalary - totalDeduction).toFixed(2)) || 0;
+  const leaveDeduction = Math.max(0, parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2)) || 0);
+  const totalDeduction = Math.max(0, parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2)) || 0);
+  const netSalary = Math.max(0, parseFloat((monthlySalary - totalDeduction).toFixed(2)) || 0);
 
   const summary = {
     employee_id: employeeId,

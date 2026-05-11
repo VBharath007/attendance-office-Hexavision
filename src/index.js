@@ -12,7 +12,7 @@ const bcrypt = require('bcryptjs');
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 app.use(express.json());
 
 const limiter = rateLimit({
@@ -186,7 +186,7 @@ const sendReminders = async (title, body) => {
   const sessionsSnap = await db.collection('sessions')
     .where('is_active', '==', true)
     .get();
-  
+
   const tokens = [];
   sessionsSnap.forEach(doc => {
     const data = doc.data();

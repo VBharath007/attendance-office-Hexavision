@@ -53,7 +53,18 @@ const getMonthlySummary = async (req, res) => {
       success: true, 
       data: {
         records: history.records,
-        summary: summary
+        summary: summary || {
+          employee_id: req.user.uid,
+          month, year,
+          total_working_days: 0,
+          present_days: 0,
+          absent_days: 0,
+          remaining_days: 0,
+          late_days: 0,
+          net_salary: 0,
+          gross_salary: 0,
+          total_deduction: 0
+        }
       }
     });
   } catch (err) {
