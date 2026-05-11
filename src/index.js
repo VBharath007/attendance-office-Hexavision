@@ -214,10 +214,11 @@ exports.reminder1000 = functions.pubsub.schedule('0 10 * * *')
     await sendReminders('Late Warning! ⏰', 'It is 10:00 AM. Check in before 10:10 AM to avoid being blocked!');
   });
 
-exports.reminder1010 = functions.pubsub.schedule('10 10 * * *')
+exports.reminder1005 = functions.pubsub.schedule('5 10 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
-    await sendReminders('Check-In Closed 🔒', 'It is 10:10 AM. Check-in for today is now closed.');
+    await sendReminders('Check-In Closing Soon! ⚠️', 'It is 10:05 AM. Only 5 minutes left to mark your attendance before it closes!');
   });
+
 
 exports.reminder1830 = functions.pubsub.schedule('30 18 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {

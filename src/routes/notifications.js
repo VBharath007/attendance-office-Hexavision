@@ -29,4 +29,34 @@ router.patch('/read-all', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.post('/token', authenticate, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ success: false, message: 'Token is required' });
+  
+  try {
+    const userType = req.user.role === 'admin' ? 'admins' : 'employees';
+    await db.collection(userType).doc(req.user.uid).update({
+      fcm_token: token,
+      updated_at: new Date()
+    });
+    
+    // Also update active session if it exists
+    const sessionSnap = await db.collection('sessions')
+      .where('uid', '==', req.user.uid)
+      .where('is_active', '==', true)
+      .get();
+      
+    if (!sessionSnap.empty) {
+      const batch = db.batch();
+      sessionSnap.docs.forEach(doc => batch.update(doc.ref, { fcm_token: token }));
+      await batch.commit();
+    }
+    
+    res.json({ success: true, message: 'Token updated successfully' });
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
+});
+
 module.exports = router;
+

@@ -44,7 +44,7 @@ Working Hours: ${s.total_working_hours||0}h / ${s.expected_hours||0}h
 Appreciation Days: ${s.appreciation_days||0}
 Salary: Net=₹${s.net_salary||'N/A'}, Deductions=₹${s.total_deduction||0}
 Leave Balance: ${emp.earned_leave_balance||0} days
-Office: 9:30–6:30 | Grace: 9:45 | Appreciation: on-time in + checkout ≥7:30PM`;
+Office: 9:30–6:30 | Grace: 10:10 | Appreciation: on-time in + checkout ≥7:30PM`;
 };
 
 const chat = async (userId, role, userMessage, history = []) => {
