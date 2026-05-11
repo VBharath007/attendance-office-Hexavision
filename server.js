@@ -49,7 +49,7 @@ app.get('/setup-admin', async (req, res) => {
   try {
     const { db } = require('./src/config/firebase');
     const bcrypt = require('bcryptjs');
-    const hashed = await bcrypt.hash('admin123', 12);
+    const hashed = await bcrypt.hash('Hex@123', 12);
     const adminData = { username: 'admin', password: hashed, full_name: 'Hexavision Admin', role: 'admin' };
 
     const existing = await db.collection('admins').where('username', '==', 'admin').get();
