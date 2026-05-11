@@ -214,7 +214,12 @@ const sendReminders = async (title, body, imageUrl = null) => {
       };
     }
 
+    console.log('Sending reminder to:', uniqueTokens);
+    console.log('Message:', message);
+
     await messaging.sendEachForMulticast(message);
+
+
   }
 };
 
