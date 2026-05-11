@@ -566,52 +566,57 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const taxableLateDays = Math.max(0, lateDaysCount - (C.LATE_WARNING_DAYS || 3));
   const lateDeduction = Math.max(0, parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0);
 
-  // Deductions
-  const sickDeduction = Math.max(0, parseFloat((taxableSickDays * dailyRate).toFixed(2)) || 0);
-  const casualDeduction = Math.max(0, parseFloat((taxableCasualDays * dailyRate).toFixed(2)) || 0);
-  const unpaidLeaveDeduction = Math.max(0, parseFloat((unpaidLeaveDays * dailyRate).toFixed(2)) || 0);
-  const permissionDeduction = Math.max(0, parseFloat((taxablePermissionHours * hourlyRate).toFixed(2)) || 0);
-  const halfDayDeduction = Math.max(0, parseFloat((halfDayDeductionDays * dailyRate).toFixed(2)) || 0);
-  const absentDeduction = Math.max(0, parseFloat((actualAbsents * dailyRate).toFixed(2)) || 0);
-  
-  const leaveDeduction = Math.max(0, parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2)) || 0);
-  const totalDeduction = Math.max(0, parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2)) || 0);
-  const netSalary = Math.max(0, parseFloat((monthlySalary - totalDeduction).toFixed(2)) || 0);
+  try {
+    // Deductions
+    const sickDeduction = Math.max(0, parseFloat((taxableSickDays * dailyRate).toFixed(2)) || 0);
+    const casualDeduction = Math.max(0, parseFloat((taxableCasualDays * dailyRate).toFixed(2)) || 0);
+    const unpaidLeaveDeduction = Math.max(0, parseFloat((unpaidLeaveDays * dailyRate).toFixed(2)) || 0);
+    const permissionDeduction = Math.max(0, parseFloat((taxablePermissionHours * hourlyRate).toFixed(2)) || 0);
+    const halfDayDeduction = Math.max(0, parseFloat((halfDayDeductionDays * dailyRate).toFixed(2)) || 0);
+    const absentDeduction = Math.max(0, parseFloat((actualAbsents * dailyRate).toFixed(2)) || 0);
+    
+    const leaveDeduction = Math.max(0, parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2)) || 0);
+    const totalDeduction = Math.max(0, parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2)) || 0);
+    const netSalary = Math.max(0, parseFloat((monthlySalary - totalDeduction).toFixed(2)) || 0);
 
-  const summary = {
-    employee_id: employeeId,
-    month, year,
-    total_working_days: totalWorkingDays,
-    present_days: presentDays,
-    absent_days: actualAbsents,
-    remaining_days: remainingDays,
-    late_days: lateDaysCount,
-    taxable_late_days: taxableLateDays,
-    leave_days: sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5,
-    taxable_leave_days: taxableSickDays + taxableCasualDays + unpaidLeaveDays,
-    sick_leave_used_year: sickLeavesTakenThisYear,
-    casual_leave_used_month: casualLeavesTakenThisMonth,
-    gross_salary: monthlySalary,
-    daily_rate: parseFloat(dailyRate.toFixed(2)),
-    hourly_rate: parseFloat(hourlyRate.toFixed(2)),
-    late_deduction: lateDeduction,
-    leave_deduction: leaveDeduction,
-    absent_deduction: absentDeduction,
-    total_deduction: totalDeduction,
-    net_salary: netSalary,
-    total_working_hours: parseFloat(totalWorkingHours.toFixed(2)),
-    overtime_minutes: records.reduce((s, r) => s + (r.overtime_minutes || 0), 0),
-    appreciated_count: appreciationDays,
-    days_in_month: daysInMonth,
-    updated_at: new Date(),
-  };
+    const summary = {
+      employee_id: employeeId,
+      month: parseInt(month), 
+      year: parseInt(year),
+      total_working_days: totalWorkingDays || 0,
+      present_days: presentDays || 0,
+      absent_days: actualAbsents || 0,
+      remaining_days: remainingDays || 0,
+      late_days: lateDaysCount || 0,
+      taxable_late_days: taxableLateDays || 0,
+      leave_days: parseFloat((sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5).toFixed(2)) || 0,
+      taxable_leave_days: (taxableSickDays || 0) + (taxableCasualDays || 0) + (unpaidLeaveDays || 0),
+      sick_leave_used_year: sickLeavesTakenThisYear || 0,
+      casual_leave_used_month: casualLeavesTakenThisMonth || 0,
+      gross_salary: monthlySalary || 0,
+      daily_rate: parseFloat((dailyRate || 0).toFixed(2)),
+      hourly_rate: parseFloat((hourlyRate || 0).toFixed(2)),
+      late_deduction: lateDeduction || 0,
+      leave_deduction: leaveDeduction || 0,
+      absent_deduction: absentDeduction || 0,
+      total_deduction: totalDeduction || 0,
+      net_salary: netSalary || 0,
+      total_working_hours: parseFloat((totalWorkingHours || 0).toFixed(2)),
+      overtime_minutes: records.reduce((s, r) => s + (r.overtime_minutes || 0), 0),
+      appreciated_count: appreciationDays || 0,
+      days_in_month: daysInMonth || 30,
+      updated_at: new Date(),
+    };
 
+    await db.collection('monthly_summary')
+      .doc(`${employeeId}_${year}_${month}`)
+      .set(summary, { merge: true });
 
-  await db.collection('monthly_summary')
-    .doc(`${employeeId}_${year}_${month}`)
-    .set(summary, { merge: true });
-
-  return summary;
+    return summary;
+  } catch (err) {
+    console.error(`❌ computeMonthlySummary CRASH for ${employeeId}:`, err);
+    return null;
+  }
 };
 
 const getTodayRecord = async (employeeId) => {
