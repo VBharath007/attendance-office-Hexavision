@@ -63,11 +63,13 @@ const getMonthlySummary = async (req, res) => {
           late_days: 0,
           net_salary: 0,
           gross_salary: 0,
-          total_deduction: 0
+          total_deduction: 0,
+          total_expected_hours: 180
         }
       }
     });
   } catch (err) {
+    console.error('❌ Error in getMonthlySummary:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -117,6 +119,3 @@ const editTiming = async (req, res) => {
 };
 
 module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary, getAdminEmployeeMonthly, editTiming };
-
-
-

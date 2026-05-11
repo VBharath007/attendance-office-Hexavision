@@ -3,7 +3,7 @@ const moment = require('moment-timezone');
 const C = require('../config/constants');
 
 const TZ = C.TIMEZONE;
-const toMin = (t) => { 
+const toMin = (t) => {
   if (!t) return 0;
   // Handle "hh:mm AM/PM" format
   if (t.includes(' ')) {
@@ -16,27 +16,27 @@ const toMin = (t) => {
     return h * 60 + m;
   }
   // Handle "HH:mm" format (24h)
-  const [h, m] = t.split(':').map(Number); 
-  return h * 60 + m; 
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
 };
 
 const OFFICE_START = toMin(C.OFFICE_START);
 const GRACE = toMin(C.GRACE_TIME);
 const OFFICE_END = toMin(C.OFFICE_END);
-const APPRECIATION_END = toMin('18:30'); // New rule: Appreciation starts at 6:30 PM
+const APPRECIATION_END = toMin('18:30'); // 6:30 PM in 24h format
 
 // Haversine formula to get distance in meters
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3; // metres
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
 }
@@ -56,7 +56,7 @@ const checkIn = async (employeeId, latitude, longitude) => {
     .where('status', '==', 'approved')
     .where('leave_type', '==', 'work_from_home')
     .get();
-    
+
   const isWfhApproved = wfhSnap.docs.some(doc => {
     const data = doc.data();
     return today >= data.from_date && today <= data.to_date;
@@ -91,7 +91,7 @@ const checkIn = async (employeeId, latitude, longitude) => {
   // ── Handle Overtime Check-In ──
   if (attSnap.exists && data.check_in && data.check_out) {
     if (data.overtime_check_in) throw new Error('Already checked in for overtime today');
-    
+
     await attRef.update({
       overtime_check_in: timeNow,
       overtime_check_in_timestamp: new Date(),
@@ -213,7 +213,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
     .where('status', '==', 'approved')
     .where('leave_type', '==', 'work_from_home')
     .get();
-    
+
   const isWfhApproved = wfhSnap.docs.some(doc => {
     const data = doc.data();
     return today >= data.from_date && today <= data.to_date;
@@ -230,7 +230,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
   const attRef = db.collection('attendance').doc(docId);
   const attSnap = await attRef.get();
   if (!attSnap.exists || !attSnap.data().check_in) throw new Error('Please check in first');
-  
+
   const data = attSnap.data();
 
   // ── Handle Overtime Check-Out ──
@@ -238,7 +238,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
     const otInMin = toMin(data.overtime_check_in);
     const otOutMin = toMin(now.format('HH:mm'));
     const otMinutes = Math.max(0, otOutMin - otInMin);
-    
+
     // Appreciation Rule: If they worked at least 1 hour of overtime
     // AND they weren't too late in the morning (before 10:10)
     const tenTenMin = toMin('10:10');
@@ -258,7 +258,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
     return {
       isOvertime: true,
       isAppreciated,
-      message: isAppreciated 
+      message: isAppreciated
         ? '🌟 Outstanding! You earned an Appreciation badge for your extra work today!'
         : '✅ Overtime checkout successful. Great job!',
     };
@@ -267,14 +267,19 @@ const checkOut = async (employeeId, latitude, longitude) => {
   if (data.check_out) throw new Error('Already checked out today');
 
   const checkInMin = toMin(data.check_in);
-  const checkOutMin = toMin(now.format('HH:mm'));
+  const checkOutMin = toMin(now.format('hh:mm A')); // Use same format as check-in for consistency
 
-  const rawMinutes = checkOutMin - checkInMin;
-  const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
-  const overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
+  console.log(`🕒 Calculating hours: In(${data.check_in}=${checkInMin}) Out(${now.format('hh:mm A')}=${checkOutMin})`);
+
+  const rawMinutes = Math.max(0, checkOutMin - checkInMin);
+  const workingHours = parseFloat((rawMinutes / 60).toFixed(2));
+  const overtimeMinutes = Math.max(0, checkOutMin - toMin(C.OFFICE_END || '18:30'));
 
   let status = data.status;
-  if (workingHours < 4) status = C.STATUS.HALF_DAY;
+  // 🕒 Professional Rule: Minimum 4 Hours for "Present"
+  if (workingHours > 0 && workingHours < 4 && status !== C.STATUS.LEAVE) {
+    status = C.STATUS.ABSENT;
+  }
 
   await attRef.update({
     check_out: timeNow,
@@ -299,7 +304,7 @@ const checkOut = async (employeeId, latitude, longitude) => {
 const autoCheckOutAll = async () => {
   const now = moment().tz(TZ);
   const today = now.format('YYYY-MM-DD');
-  
+
   // Rule: Auto-checkout at exactly 18:30 (6:30 PM)
   const timeNow = '06:30 PM';
   const checkOutMin = toMin('18:30');
@@ -336,7 +341,7 @@ const autoCheckOutAll = async () => {
     const rawMinutes = checkOutMin - checkInMin;
     const workingHours = parseFloat(Math.max(0, rawMinutes / 60 - C.LUNCH_BREAK_HOURS).toFixed(2));
     const overtimeMinutes = 0; // Since it's exactly 18:30, no overtime.
-    
+
     let status = data.status;
     if (workingHours < 4) status = C.STATUS.HALF_DAY;
 
@@ -365,7 +370,7 @@ const editAttendanceTiming = async (employeeId, date, checkInTime, checkOutTime)
   const docId = `${employeeId}_${date}`;
   const attRef = db.collection('attendance').doc(docId);
   const attSnap = await attRef.get();
-  
+
   if (!attSnap.exists) {
     throw new Error('Attendance record not found for this date.');
   }
@@ -374,10 +379,10 @@ const editAttendanceTiming = async (employeeId, date, checkInTime, checkOutTime)
   const checkInMin = toMin(checkInTime);
   const checkOutMin = checkOutTime ? toMin(checkOutTime) : null;
 
-  // Recalculate Late
-  const isLate = checkInMin > GRACE;
-  const lateMinutes = isLate ? checkInMin - OFFICE_START : 0;
-  
+  const graceMin = toMin(C.GRACE_TIME || '10:10');
+  const isLate = checkInMin > graceMin;
+  const lateMinutes = isLate ? checkInMin - toMin(C.OFFICE_START) : 0;
+
   // Recalculate Work Hours & Overtime
   let workingHours = 0;
   let overtimeMinutes = 0;
@@ -417,12 +422,11 @@ const getMonthlyAttendance = async (employeeId, month, year) => {
 
   const snap = await db.collection('attendance')
     .where('employee_id', '==', employeeId)
-    .where('date', '>=', startDate)
-    .where('date', '<=', endDate)
     .get();
 
   const records = snap.docs
     .map(d => d.data())
+    .filter(r => r.date >= startDate && r.date <= endDate)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const summarySnap = await db.collection('monthly_summary')
@@ -445,11 +449,11 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   // Get attendance records
   const attSnap = await db.collection('attendance').where('employee_id', '==', employeeId).get();
   const records = attSnap.docs.map(d => d.data())
-    .filter(r => { 
-      const [y, m] = r.date.split('-').map(Number); 
-      return y === year && m === month; 
+    .filter(r => {
+      const [y, m] = r.date.split('-').map(Number);
+      return y === year && m === month;
     });
-    
+
   console.log(`📊 Summary for ${employeeId}: Found ${attSnap.size} total records, ${records.length} for ${month}/${year}`);
 
   // Get approved leaves
@@ -478,116 +482,146 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   let expectedDaysUpToNow = 0;
   let remainingDays = 0;
   const now = moment().tz(TZ);
-  
+
   for (let d = 1; d <= daysInMonth; d++) {
     const day = moment(`${year}-${month}-${d}`, 'YYYY-M-D');
     const isSunday = day.day() === 0;
     const isHoliday = holidays.has(day.format('YYYY-MM-DD'));
-    
+
     if (!isSunday && !isHoliday) {
       totalWorkingDays++;
-      if (day.isSame(now, 'day') || day.isAfter(now, 'day')) {
+      const dateStr = day.format('YYYY-MM-DD');
+      const hasRecord = records.some(r => r.date === dateStr);
+
+      if (day.isAfter(now, 'day')) {
+        remainingDays++;
+      } else if (day.isSame(now, 'day') && !hasRecord) {
         remainingDays++;
       } else {
         expectedDaysUpToNow++;
       }
     }
   }
-  
-  const presentDaysSet = new Set(records.map(r => r.date));
+
+  // 🕒 Advanced Re-calculation Logic to ensure 100% accuracy
+  const processedRecords = records.map(r => {
+    let wh = r.working_hours || 0;
+    if (wh === 0 && r.check_in && r.check_out) {
+      const inMin = toMin(r.check_in);
+      const outMin = toMin(r.check_out);
+      wh = parseFloat(((outMin - inMin) / 60).toFixed(2));
+    }
+
+    let status = r.status;
+    const checkInMin = toMin(r.check_in);
+    const graceMin = toMin(C.GRACE_TIME || '10:10');
+
+    // Re-evaluate status based on new rules
+    if (r.check_in && r.check_out) {
+      if (wh < 4) {
+        status = C.STATUS.ABSENT;
+      } else {
+        status = checkInMin > graceMin ? C.STATUS.LATE : C.STATUS.PRESENT;
+      }
+    }
+    return { ...r, working_hours: wh, status: status };
+  });
+
+  const presentDays = processedRecords.filter(r =>
+    (r.status === C.STATUS.PRESENT || r.status === C.STATUS.LATE || r.status === C.STATUS.HALF_DAY)
+  ).length;
+
+  const lateDays = processedRecords.filter(r =>
+    r.status === C.STATUS.LATE
+  ).length;
+
+  const presentDaysSet = new Set(processedRecords.filter(r =>
+    (r.status === C.STATUS.PRESENT || r.status === C.STATUS.LATE || r.status === C.STATUS.HALF_DAY)
+  ).map(r => r.date));
   const leaveDaysSet = new Set(monthlyLeaves.flatMap(l => {
-    // If leave has a date range, expansion is needed, but assuming simple for now
-    return [l.date]; // Simplified for now, usually leaves have a date field
+    return [l.date];
   }));
-  
-  // More accurate absent count: days before today that are not Sunday, not Holiday, and have no record
+
+  // More accurate absent count: include today if they checked out and work < 4h
   let actualAbsents = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const day = moment(`${year}-${month}-${d}`, 'YYYY-M-D');
+    const dateStr = day.format('YYYY-MM-DD');
+    const isSunday = day.day() === 0;
+    const isHoliday = holidays.has(dateStr);
+
     if (day.isBefore(now, 'day')) {
-      const dateStr = day.format('YYYY-MM-DD');
-      const isSunday = day.day() === 0;
-      const isHoliday = holidays.has(dateStr);
       if (!isSunday && !isHoliday && !presentDaysSet.has(dateStr)) {
+        actualAbsents++;
+      }
+    } else if (day.isSame(now, 'day')) {
+      // If today and they checked out but didn't meet 4h requirement
+      const todayRecord = records.find(r => r.date === dateStr);
+      if (!isSunday && !isHoliday && (!presentDaysSet.has(dateStr) && todayRecord && todayRecord.check_out)) {
         actualAbsents++;
       }
     }
   }
 
-  const presentDays = records.filter(r => ['present', 'late', 'half_day'].includes(r.status)).length;
-  const lateDays = records.filter(r => r.late_minutes > 0).length;
-  const halfDays = records.filter(r => r.status === 'half_day').length;
-  const appreciationDays = records.filter(r => r.is_appreciated).length;
-  
+  const halfDays = processedRecords.filter(r => r.status === 'half_day').length;
+  const appreciationDays = processedRecords.filter(r => r.is_appreciated).length;
+
   // Leave calculations
   const sickLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'sick').length;
   const casualLeavesTakenThisMonth = monthlyLeaves.filter(l => l.leave_type === 'casual').length;
   const permissionLeavesThisMonth = monthlyLeaves.filter(l => l.leave_type === 'permission');
   const unpaidLeaveDays = monthlyLeaves.filter(l => l.leave_type === 'unpaid').length;
   const leaveHalfDays = monthlyLeaves.filter(l => l.leave_type === 'half_day').length;
-  
+
   const sickLeavesTakenThisYear = yearlyLeaves.filter(l => l.leave_type === 'sick').length;
   const taxableSickDays = Math.max(0, sickLeavesTakenThisYear - (C.SICK_LEAVES_PER_YEAR || 12));
   const taxableCasualDays = Math.max(0, casualLeavesTakenThisMonth - (C.CASUAL_LEAVES_PER_MONTH || 1));
-  
+
   const totalPermissionMinutes = permissionLeavesThisMonth.reduce((s, l) => s + (l.duration_minutes || 0), 0);
   const taxablePermissionMinutes = Math.max(0, totalPermissionMinutes - (C.FREE_PERMISSION_MIN_PER_MONTH || 60));
   const taxablePermissionHours = taxablePermissionMinutes / 60;
-  
+
   const totalHalfDaysCount = halfDays + leaveHalfDays;
   const halfDayDeductionDays = totalHalfDaysCount > 2 ? totalHalfDaysCount * 0.5 : 0;
-  
+
   const leaveDaysSum = sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5;
 
-  const totalWorkingHours = records.reduce((s, r) => {
-    let wh = r.working_hours;
-    // If working_hours is missing or 0 but we have check_in and check_out, re-calculate it on the fly
-    if ((!wh || wh === 0) && r.check_in && r.check_out) {
-      const inMin = toMin(r.check_in);
-      const outMin = toMin(r.check_out);
-      if (outMin > inMin) {
-        const rawHrs = (outMin - inMin) / 60;
-        const lunchDed = rawHrs > 6 ? (C.LUNCH_BREAK_HOURS || 1) : 0;
-        wh = parseFloat(Math.max(0, rawHrs - lunchDed).toFixed(2));
-      }
-    }
-    return s + (wh || 0);
-  }, 0);
+  const totalWorkingHours = processedRecords.reduce((s, r) => s + (r.working_hours || 0), 0);
 
-  const dailyRate = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0; 
+  const dailyRate = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0;
   const hourlyRate = dailyRate > 0 ? dailyRate / 9 : 0; // 9 hours working day
 
   // 🕒 Late Arrival Logic
-  const lateRecords = records
+  const lateRecords = processedRecords
     .filter(r => (r.late_minutes || 0) > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
-  
+
   const lateDaysCount = lateRecords.length;
   const taxableLateDays = Math.max(0, lateDaysCount - (C.LATE_WARNING_DAYS || 3));
   const lateDeduction = Math.max(0, parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0);
 
   try {
     // Deductions
-    const sickDeduction = Math.max(0, parseFloat((taxableSickDays * dailyRate).toFixed(2)) || 0);
-    const casualDeduction = Math.max(0, parseFloat((taxableCasualDays * dailyRate).toFixed(2)) || 0);
-    const unpaidLeaveDeduction = Math.max(0, parseFloat((unpaidLeaveDays * dailyRate).toFixed(2)) || 0);
-    const permissionDeduction = Math.max(0, parseFloat((taxablePermissionHours * hourlyRate).toFixed(2)) || 0);
-    const halfDayDeduction = Math.max(0, parseFloat((halfDayDeductionDays * dailyRate).toFixed(2)) || 0);
-    const absentDeduction = Math.max(0, parseFloat((actualAbsents * dailyRate).toFixed(2)) || 0);
-    
+    const sickDeduction = Math.max(0, parseFloat(((taxableSickDays || 0) * (dailyRate || 0)).toFixed(2)) || 0);
+    const casualDeduction = Math.max(0, parseFloat(((taxableCasualDays || 0) * (dailyRate || 0)).toFixed(2)) || 0);
+    const unpaidLeaveDeduction = Math.max(0, parseFloat(((unpaidLeaveDays || 0) * (dailyRate || 0)).toFixed(2)) || 0);
+    const permissionDeduction = Math.max(0, parseFloat(((taxablePermissionHours || 0) * (hourlyRate || 0)).toFixed(2)) || 0);
+    const halfDayDeduction = Math.max(0, parseFloat(((halfDayDeductionDays || 0) * (dailyRate || 0)).toFixed(2)) || 0);
+    const absentDeduction = Math.max(0, parseFloat(((actualAbsents || 0) * (dailyRate || 0)).toFixed(2)) || 0);
+
     const leaveDeduction = Math.max(0, parseFloat((sickDeduction + casualDeduction + unpaidLeaveDeduction + permissionDeduction + halfDayDeduction).toFixed(2)) || 0);
     const totalDeduction = Math.max(0, parseFloat((lateDeduction + leaveDeduction + absentDeduction).toFixed(2)) || 0);
-    const netSalary = Math.max(0, parseFloat((monthlySalary - totalDeduction).toFixed(2)) || 0);
+    const netSalary = Math.max(0, parseFloat(((monthlySalary || 0) - totalDeduction).toFixed(2)) || 0);
 
     const summary = {
       employee_id: employeeId,
-      month: parseInt(month), 
+      month: parseInt(month),
       year: parseInt(year),
       total_working_days: totalWorkingDays || 0,
       present_days: presentDays || 0,
       absent_days: actualAbsents || 0,
       remaining_days: remainingDays || 0,
-      late_days: lateDaysCount || 0,
+      late_days: lateDays || 0,
       taxable_late_days: taxableLateDays || 0,
       leave_days: parseFloat((sickLeavesTakenThisMonth + casualLeavesTakenThisMonth + unpaidLeaveDays + leaveHalfDays * 0.5).toFixed(2)) || 0,
       taxable_leave_days: (taxableSickDays || 0) + (taxableCasualDays || 0) + (unpaidLeaveDays || 0),
@@ -602,6 +636,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
       total_deduction: totalDeduction || 0,
       net_salary: netSalary || 0,
       total_working_hours: parseFloat((totalWorkingHours || 0).toFixed(2)),
+      total_expected_hours: (totalWorkingDays || 0) * 9,
       overtime_minutes: records.reduce((s, r) => s + (r.overtime_minutes || 0), 0),
       appreciated_count: appreciationDays || 0,
       days_in_month: daysInMonth || 30,
@@ -622,7 +657,17 @@ const computeMonthlySummary = async (employeeId, month, year) => {
 const getTodayRecord = async (employeeId) => {
   const today = moment().tz(TZ).format('YYYY-MM-DD');
   const snap = await db.collection('attendance').doc(`${employeeId}_${today}`).get();
-  return snap.exists ? snap.data() : null;
+  if (!snap.exists) return null;
+
+  const data = snap.data();
+  // 🔥 SMART FIX: If working_hours is 0 but they have both check-in and out, calculate it on the fly!
+  if ((!data.working_hours || data.working_hours === 0) && data.check_in && data.check_out) {
+    const inMin = toMin(data.check_in);
+    const outMin = toMin(data.check_out);
+    data.working_hours = parseFloat(Math.max(0, (outMin - inMin) / 60).toFixed(2));
+  }
+
+  return data;
 };
 
 const getAdminToday = async () => {
@@ -630,7 +675,6 @@ const getAdminToday = async () => {
   const attSnap = await db.collection('attendance').where('date', '==', todayStr).get();
   const empSnap = await db.collection('employees')
     .where('status', '==', 'active')
-    .select('full_name', 'designation', 'employee_id')
     .get();
 
   const employees = {};
@@ -641,34 +685,58 @@ const getAdminToday = async () => {
   let presentCount = 0;
   let lateCount = 0;
   let appreciatedCount = 0;
+  let halfDayCount = 0;
 
   const data = attSnap.docs.map(doc => {
     const att = doc.data();
     const emp = employees[att.employee_id] || {};
-    
-    presentCount++;
+
+    // 🔥 SMART FIX: Re-calculate hours if zero but checked out
+    if ((!att.working_hours || att.working_hours === 0) && att.check_in && att.check_out) {
+      const inMin = toMin(att.check_in);
+      const outMin = toMin(att.check_out);
+      att.working_hours = parseFloat(Math.max(0, (outMin - inMin) / 60).toFixed(2));
+    }
+
+    // 🔥 RULE: If checked out and worked < 4 hours, mark as ABSENT in admin view too
+    if (att.check_out && att.working_hours < 4 && att.status !== C.STATUS.LEAVE) {
+      att.status = C.STATUS.ABSENT;
+    }
+
+    // 🔥 SMART FIX: Dynamic Late Check for Summary (Consistent with 10:15 threshold)
+    const checkInMin = toMin(att.check_in);
+    if (att.status === C.STATUS.LATE && checkInMin <= GRACE) {
+      att.status = C.STATUS.PRESENT;
+    }
+
+    if (att.status === C.STATUS.PRESENT || att.status === C.STATUS.LATE) presentCount++;
     if (att.status === C.STATUS.LATE) lateCount++;
+    if (att.status === C.STATUS.HALF_DAY) halfDayCount++;
     if (att.is_appreciated) appreciatedCount++;
 
     return {
       id: doc.id,
       ...att,
-      check_in_formatted: att.check_in_timestamp ? moment(att.check_in_timestamp.toDate()).tz(TZ).format('DD MMM YYYY, hh:mm A') : null,
-      check_out_formatted: att.check_out_timestamp ? moment(att.check_out_timestamp.toDate()).tz(TZ).format('DD MMM YYYY, hh:mm A') : null,
-      full_name: emp.full_name || null,
-      designation: emp.designation || null,
-      employee_id: emp.employee_id || att.employee_id 
+      full_name: emp.full_name || 'Staff',
+      designation: emp.designation || 'Employee',
+      employee_id: emp.employee_id || att.employee_id
     };
   });
 
-  const summary = {
-    present: presentCount,
-    absent: Math.max(0, empSnap.size - presentCount),
-    late: lateCount,
-    appreciated: appreciatedCount
-  };
+  const activeStaffCount = empSnap.size;
+  const absentCount = Math.max(0, activeStaffCount - (presentCount + halfDayCount));
 
-  return { summary, data };
+  return {
+    summary: {
+      total: activeStaffCount,
+      present: presentCount,
+      absent: absentCount,
+      late: lateCount,
+      appreciated: appreciatedCount,
+      halfDay: halfDayCount
+    },
+    data
+  };
 };
 
 module.exports = { checkIn, checkOut, autoCheckOutAll, editAttendanceTiming, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord };
