@@ -250,6 +250,12 @@ exports.reminder1830 = functions.pubsub.schedule('30 18 * * *')
 
 exports.reminder2200 = functions.pubsub.schedule('0 22 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
-    const imageUrl = 'https://plus.unsplash.com/premium_vector-1741541315802-990a41c1074e?w=600&auto=format&fit=crop';
+    const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
     await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl);
+  });
+
+exports.reminder2215 = functions.pubsub.schedule('15 22 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
+    await sendReminders('Test Good Night! ✨', 'It is 10:15 PM. This is a test notification.', imageUrl);
   });
