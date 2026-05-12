@@ -119,13 +119,6 @@ cron.schedule('0 22 * * *', async () => {
   await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl);
 }, { timezone: "Asia/Kolkata" });
 
-// 🚀 TEMPORARY: 5-Minute Test Reminder (Runs every 5 minutes)
-cron.schedule('*/5 * * * *', async () => {
-  console.log('⏰ Test Cron: Triggering 5-Minute Reminder');
-  const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
-  await sendReminders('5-Min Pulse Check! ⚡', 'This is your real-time 5-minute test notification.', imageUrl);
-}, { timezone: "Asia/Kolkata" });
-
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, '0.0.0.0', () => {

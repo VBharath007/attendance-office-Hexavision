@@ -216,16 +216,3 @@ exports.reminder2200 = functions.pubsub.schedule('0 22 * * *')
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
     await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl);
   });
-
-exports.reminder2215 = functions.pubsub.schedule('15 22 * * *')
-  .timeZone(C.TIMEZONE).onRun(async () => {
-    const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
-    await sendReminders('Test Good Night! ✨', 'It is 10:15 PM. This is a test notification.', imageUrl);
-  });
-
-// 🚀 TEMPORARY: 5-Minute Test Reminder (Every 5 minutes)
-exports.testReminderEvery5Min = functions.pubsub.schedule('every 5 minutes')
-  .timeZone(C.TIMEZONE).onRun(async () => {
-    const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
-    await sendReminders('5-Min Pulse Check! ⚡', 'This is your real-time 5-minute test notification from Firebase.', imageUrl);
-  });
