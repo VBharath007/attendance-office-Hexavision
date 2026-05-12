@@ -8,46 +8,90 @@ const { db, messaging } = require('../config/firebase');
  */
 const sendReminders = async (title, body, imageUrl = null) => {
   try {
-    // Only send to employees with active sessions
+    // 1. Get all active sessions with FCM tokens
     const sessionsSnap = await db.collection('sessions')
       .where('is_active', '==', true)
       .get();
 
-    const tokens = [];
-    sessionsSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.fcm_token) tokens.push(data.fcm_token);
-    });
-
-    if (tokens.length === 0) {
-      console.log('ℹ️ No active sessions with FCM tokens found.');
+    if (sessionsSnap.empty) {
+      console.log('ℹ️ No active sessions found.');
       return { success: true, message: 'No active sessions' };
     }
 
-    // Remove duplicates
-    const uniqueTokens = [...new Set(tokens)];
-
-    const message = {
-      tokens: uniqueTokens,
-      notification: { title, body },
-      android: {
-        priority: 'high',
+    // 2. Group tokens by UID to avoid duplicate fetches
+    const uidToTokens = {};
+    sessionsSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.fcm_token) {
+        if (!uidToTokens[data.uid]) uidToTokens[data.uid] = [];
+        uidToTokens[data.uid].push(data.fcm_token);
       }
-    };
+    });
 
-    if (imageUrl) {
-      message.notification.imageUrl = imageUrl;
-      message.android.notification = { imageUrl: imageUrl };
-      message.apns = {
-        payload: { aps: { 'mutable-content': 1 } },
-        fcm_options: { image: imageUrl }
-      };
+    const uids = Object.keys(uidToTokens);
+    if (uids.length === 0) return { success: true, message: 'No tokens found' };
+
+    // 3. Fetch employee names in chunks (Firestore 'in' query limit is 30)
+    const uidToName = {};
+    const chunkSize = 30;
+    for (let i = 0; i < uids.length; i += chunkSize) {
+      const chunk = uids.slice(i, i + chunkSize);
+      const empsSnap = await db.collection('employees')
+        .where('uid', 'in', chunk)
+        .get();
+      
+      empsSnap.forEach(doc => {
+        const data = doc.data();
+        // Get only the first name for a friendly "Hi Name"
+        const firstName = data.full_name ? data.full_name.split(' ')[0] : 'Member';
+        uidToName[doc.id] = firstName;
+      });
     }
 
-    console.log(`🔔 Sending reminder: "${title}" to ${uniqueTokens.length} devices.`);
-    console.log('Tokens:', uniqueTokens);
+    // 4. Build individual personalized messages
+    const messages = [];
+    for (const uid of uids) {
+      const name = uidToName[uid] || 'Team';
+      const personalizedBody = `Hi ${name}, ${body}`;
+      
+      uidToTokens[uid].forEach(token => {
+        const msg = {
+          token: token,
+          notification: { 
+            title: title, 
+            body: personalizedBody 
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+            }
+          },
+          apns: {
+            payload: {
+              aps: {
+                sound: 'default',
+                'mutable-content': 1
+              }
+            }
+          }
+        };
 
-    const response = await messaging.sendEachForMulticast(message);
+        if (imageUrl) {
+          msg.notification.imageUrl = imageUrl;
+          msg.android.notification = { ...msg.android.notification, imageUrl: imageUrl };
+          msg.apns.fcm_options = { image: imageUrl };
+        }
+
+        messages.push(msg);
+      });
+    }
+
+    console.log(`🔔 Sending ${messages.length} personalized reminders...`);
+
+    // 5. Send messages using sendEach (v1 API)
+    const response = await messaging.sendEach(messages);
     
     console.log(`✅ Successfully sent ${response.successCount} messages; ${response.failureCount} failed.`);
     
