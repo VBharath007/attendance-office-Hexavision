@@ -150,7 +150,7 @@ exports.createSuperAdmin = functions.https.onRequest(async (req, res) => {
 
   try {
     const userRecord = await auth.createUser({
-      email: 'admin@company.com',
+      email: 'HEXAVISION@company.com',
       password: 'Admin@123',
       displayName: 'Super Admin',
     });
