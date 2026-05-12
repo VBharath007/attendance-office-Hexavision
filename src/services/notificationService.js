@@ -18,17 +18,24 @@ const sendReminders = async (title, body, imageUrl = null) => {
       return { success: true, message: 'No active sessions' };
     }
 
-    // 2. Group tokens by UID to avoid duplicate fetches
-    const uidToTokens = {};
+    // 2. Only keep the LATEST token for each unique user (UID)
+    const uidToLatestToken = {};
+    const uidToLastLogin = {};
+
     sessionsSnap.forEach(doc => {
       const data = doc.data();
       if (data.fcm_token) {
-        if (!uidToTokens[data.uid]) uidToTokens[data.uid] = [];
-        uidToTokens[data.uid].push(data.fcm_token);
+        // Convert Firestore timestamp to JS Date for comparison
+        const lastLogin = data.last_login ? data.last_login.toDate() : new Date(0);
+        
+        if (!uidToLastLogin[data.uid] || lastLogin > uidToLastLogin[data.uid]) {
+          uidToLatestToken[data.uid] = data.fcm_token;
+          uidToLastLogin[data.uid] = lastLogin;
+        }
       }
     });
 
-    const uids = Object.keys(uidToTokens);
+    const uids = Object.keys(uidToLatestToken);
     if (uids.length === 0) return { success: true, message: 'No tokens found' };
 
     // 3. Fetch employee names in chunks (Firestore 'in' query limit is 30)
@@ -53,39 +60,38 @@ const sendReminders = async (title, body, imageUrl = null) => {
     for (const uid of uids) {
       const name = uidToName[uid] || 'Team';
       const personalizedBody = `Hi ${name}, ${body}`;
+      const token = uidToLatestToken[uid];
       
-      uidToTokens[uid].forEach(token => {
-        const msg = {
-          token: token,
-          notification: { 
-            title: title, 
-            body: personalizedBody 
-          },
-          android: {
-            priority: 'high',
-            notification: {
+      const msg = {
+        token: token,
+        notification: { 
+          title: title, 
+          body: personalizedBody 
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+          }
+        },
+        apns: {
+          payload: {
+            aps: {
               sound: 'default',
-              clickAction: 'FLUTTER_NOTIFICATION_CLICK',
-            }
-          },
-          apns: {
-            payload: {
-              aps: {
-                sound: 'default',
-                'mutable-content': 1
-              }
+              'mutable-content': 1
             }
           }
-        };
-
-        if (imageUrl) {
-          msg.notification.imageUrl = imageUrl;
-          msg.android.notification = { ...msg.android.notification, imageUrl: imageUrl };
-          msg.apns.fcm_options = { image: imageUrl };
         }
+      };
 
-        messages.push(msg);
-      });
+      if (imageUrl) {
+        msg.notification.imageUrl = imageUrl;
+        msg.android.notification = { ...msg.android.notification, imageUrl: imageUrl };
+        msg.apns.fcm_options = { image: imageUrl };
+      }
+
+      messages.push(msg);
     }
 
     console.log(`🔔 Sending ${messages.length} personalized reminders...`);
