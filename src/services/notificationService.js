@@ -18,25 +18,29 @@ const sendReminders = async (title, body, imageUrl = null) => {
       return { success: true, message: 'No active sessions' };
     }
 
-    // 2. Only keep the LATEST token for each unique user (UID)
-    const uidToLatestToken = {};
-    const uidToLastLogin = {};
+    // 2. De-duplicate by TOKEN (ensure only one notification per device)
+    // We pick the latest user (UID) who logged into that specific token
+    const tokenToLatestSession = {};
 
     sessionsSnap.forEach(doc => {
       const data = doc.data();
       if (data.fcm_token) {
-        // Convert Firestore timestamp to JS Date for comparison
         const lastLogin = data.last_login ? data.last_login.toDate() : new Date(0);
         
-        if (!uidToLastLogin[data.uid] || lastLogin > uidToLastLogin[data.uid]) {
-          uidToLatestToken[data.uid] = data.fcm_token;
-          uidToLastLogin[data.uid] = lastLogin;
+        if (!tokenToLatestSession[data.fcm_token] || lastLogin > tokenToLatestSession[data.fcm_token].lastLogin) {
+          tokenToLatestSession[data.fcm_token] = {
+            uid: data.uid,
+            lastLogin: lastLogin
+          };
         }
       }
     });
 
-    const uids = Object.keys(uidToLatestToken);
-    if (uids.length === 0) return { success: true, message: 'No tokens found' };
+    const uniqueTokens = Object.keys(tokenToLatestSession);
+    if (uniqueTokens.length === 0) return { success: true, message: 'No tokens found' };
+
+    // Get unique UIDs to fetch names
+    const uids = [...new Set(uniqueTokens.map(t => tokenToLatestSession[t].uid))];
 
     // 3. Fetch employee names in chunks (Firestore 'in' query limit is 30)
     const uidToName = {};
@@ -57,10 +61,10 @@ const sendReminders = async (title, body, imageUrl = null) => {
 
     // 4. Build individual personalized messages
     const messages = [];
-    for (const uid of uids) {
+    for (const token of uniqueTokens) {
+      const uid = tokenToLatestSession[token].uid;
       const name = uidToName[uid] || 'Team';
       const personalizedBody = `Hi ${name}, ${body}`;
-      const token = uidToLatestToken[uid];
       
       const msg = {
         token: token,
