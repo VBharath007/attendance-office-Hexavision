@@ -14,6 +14,7 @@ router.get('/appreciations', authenticate, attendanceController.getMonthlySummar
 router.get('/admin/today', authenticate, adminOnly, attendanceController.getAdminToday);
 router.get('/admin/employee/:employeeId/monthly', authenticate, adminOnly, attendanceController.getAdminEmployeeMonthly);
 router.post('/admin/edit-timing', authenticate, adminOnly, attendanceController.editTiming);
+router.post('/sync-location', authenticate, attendanceController.syncLocation);
 
 
 module.exports = router;

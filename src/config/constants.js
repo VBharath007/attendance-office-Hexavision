@@ -13,7 +13,8 @@ module.exports = {
 
   OFFICE_LAT: 9.932548064389838,
   OFFICE_LNG: 78.14469758285455,
-  MAX_DISTANCE_METERS: 70, // Temporarily increased for emulator testing
+  MAX_DISTANCE_METERS: 70, 
+  GEOFENCE_THRESHOLD_METERS: 300, 
 
   ROLES: { ADMIN: 'admin', EMPLOYEE: 'employee' },
 

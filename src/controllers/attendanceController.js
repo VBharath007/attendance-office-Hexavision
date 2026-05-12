@@ -118,4 +118,14 @@ const editTiming = async (req, res) => {
   }
 };
 
-module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary, getAdminEmployeeMonthly, editTiming };
+const syncLocation = async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+    const result = await attendanceService.syncLocation(req.user.uid, latitude, longitude);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary, getAdminEmployeeMonthly, editTiming, syncLocation };

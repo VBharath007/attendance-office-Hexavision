@@ -200,7 +200,7 @@ const checkIn = async (employeeId, latitude, longitude) => {
 };
 
 // ─── Check Out ───────────────────────────────────────────────────────────────
-const checkOut = async (employeeId, latitude, longitude) => {
+const checkOut = async (employeeId, latitude, longitude, isAuto = false) => {
   if (!latitude || !longitude) {
     throw new Error('Location access is required to mark attendance');
   }
@@ -220,8 +220,19 @@ const checkOut = async (employeeId, latitude, longitude) => {
   });
 
   const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
-  if (!isWfhApproved && distance > C.MAX_DISTANCE_METERS) {
-    throw new Error(`You must be within ${C.MAX_DISTANCE_METERS} meters of the office. You are ${Math.round(distance)} meters away.`);
+  
+  if (!isWfhApproved) {
+    if (isAuto) {
+      // For auto-checkout, they MUST be outside the threshold
+      if (distance < C.GEOFENCE_THRESHOLD_METERS) {
+        return { skipped: true, reason: 'Still within geofence range' };
+      }
+    } else {
+      // For manual checkout, they MUST be inside the office range
+      if (distance > C.MAX_DISTANCE_METERS) {
+        throw new Error(`Manual check-out requires being at the office. You are ${Math.round(distance)}m away.`);
+      }
+    }
   }
 
   const timeNow = now.format('hh:mm A');
@@ -232,72 +243,78 @@ const checkOut = async (employeeId, latitude, longitude) => {
   if (!attSnap.exists || !attSnap.data().check_in) throw new Error('Please check in first');
 
   const data = attSnap.data();
-
-  // ── Handle Overtime Check-Out ──
-  if (data.overtime_check_in && !data.overtime_check_out) {
-    const otInMin = toMin(data.overtime_check_in);
-    const otOutMin = toMin(now.format('HH:mm'));
-    const otMinutes = Math.max(0, otOutMin - otInMin);
-
-    // Appreciation Rule: If they worked at least 1 hour of overtime
-    // AND they weren't too late in the morning (before 10:10)
-    const tenTenMin = toMin('10:10');
-    const normalCheckInMin = toMin(data.check_in);
-    const isAppreciated = (normalCheckInMin <= tenTenMin) && (otMinutes >= 60);
-
-    await attRef.update({
-      overtime_check_out: timeNow,
-      overtime_check_out_timestamp: new Date(),
-      overtime_check_out_lat: latitude || null,
-      overtime_check_out_lng: longitude || null,
-      overtime_minutes: (data.overtime_minutes || 0) + otMinutes,
-      is_appreciated: isAppreciated,
-      updated_at: new Date(),
-    });
-
-    return {
-      isOvertime: true,
-      isAppreciated,
-      message: isAppreciated
-        ? '🌟 Outstanding! You earned an Appreciation badge for your extra work today!'
-        : '✅ Overtime checkout successful. Great job!',
-    };
-  }
-
-  if (data.check_out) throw new Error('Already checked out today');
+  if (data.check_out && !isAuto) throw new Error('Already checked out today');
+  if (data.check_out && isAuto) return { skipped: true, reason: 'Already checked out' };
 
   const checkInMin = toMin(data.check_in);
-  const checkOutMin = toMin(now.format('hh:mm A')); // Use same format as check-in for consistency
+  const checkOutMin = toMin(now.format('HH:mm')); // 24h for calculation
+  const officeEndMin = toMin(C.OFFICE_END || '18:30');
 
-  console.log(`🕒 Calculating hours: In(${data.check_in}=${checkInMin}) Out(${now.format('hh:mm A')}=${checkOutMin})`);
+  // 🕒 Logic: Split between Regular and Overtime
+  const regularCheckOutMin = Math.min(checkOutMin, officeEndMin);
+  const rawWorkingMinutes = Math.max(0, regularCheckOutMin - checkInMin);
+  const workingHours = parseFloat((rawWorkingMinutes / 60).toFixed(2));
+  
+  const overtimeMinutes = Math.max(0, checkOutMin - officeEndMin);
 
-  const rawMinutes = Math.max(0, checkOutMin - checkInMin);
-  const workingHours = parseFloat((rawMinutes / 60).toFixed(2));
-  const overtimeMinutes = Math.max(0, checkOutMin - toMin(C.OFFICE_END || '18:30'));
+  // 🌟 Appreciation Rule: In by 10:10, Stayed 1 hour extra (7:30 PM)
+  const tenTenMin = toMin(C.APPRECIATION_CHECKIN_MAX || '10:10');
+  const appreciationMin = toMin(C.APPRECIATION_CHECKOUT_MIN || '19:30');
+  const isAppreciated = (checkInMin <= tenTenMin) && (checkOutMin >= appreciationMin);
 
   let status = data.status;
-  // 🕒 Professional Rule: Minimum 4 Hours for "Present"
+  // Professional Rule: Minimum 4 Hours for "Present"
   if (workingHours > 0 && workingHours < 4 && status !== C.STATUS.LEAVE) {
     status = C.STATUS.ABSENT;
   }
 
-  await attRef.update({
+  const updateData = {
     check_out: timeNow,
     check_out_timestamp: new Date(),
     check_out_lat: latitude || null,
     check_out_lng: longitude || null,
     working_hours: workingHours,
     overtime_minutes: overtimeMinutes,
+    is_appreciated: isAppreciated,
     status,
+    is_auto_checkout: isAuto,
     updated_at: new Date(),
-  });
+  };
+
+  await attRef.update(updateData);
 
   return {
     checkOutTime: timeNow,
     workingHours,
     overtimeMinutes,
-    message: `✅ Checked out. Worked ${workingHours.toFixed(1)} hours today`,
+    isAppreciated,
+    isAuto,
+    message: isAppreciated 
+      ? `🌟 Outstanding! Appreciation earned. Worked ${workingHours}h + ${overtimeMinutes}m OT.`
+      : `✅ Checked out. Worked ${workingHours}h ${overtimeMinutes > 0 ? `+ ${overtimeMinutes}m OT` : ''}`,
   };
+};
+
+// ─── Sync Location (Geofence Auto Check-Out) ──────────────────────────────────
+const syncLocation = async (employeeId, latitude, longitude) => {
+  const now = moment().tz(TZ);
+  const today = now.format('YYYY-MM-DD');
+  
+  const attRef = db.collection('attendance').doc(`${employeeId}_${today}`);
+  const attSnap = await attRef.get();
+  
+  if (!attSnap.exists || !attSnap.data().check_in || attSnap.data().check_out) {
+    return { status: 'idle', message: 'No active session to monitor' };
+  }
+
+  const distance = getDistance(latitude, longitude, C.OFFICE_LAT, C.OFFICE_LNG);
+  
+  if (distance > C.GEOFENCE_THRESHOLD_METERS) {
+    console.log(`🚀 Geofence Breach: Employee ${employeeId} is ${Math.round(distance)}m away. Triggering Auto Check-Out.`);
+    return await checkOut(employeeId, latitude, longitude, true);
+  }
+
+  return { status: 'ok', distance: Math.round(distance), message: 'Within range' };
 };
 
 // ─── Auto Check Out All (Scheduled) ──────────────────────────────────────────
@@ -739,4 +756,4 @@ const getAdminToday = async () => {
   };
 };
 
-module.exports = { checkIn, checkOut, autoCheckOutAll, editAttendanceTiming, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord };
+module.exports = { checkIn, checkOut, autoCheckOutAll, editAttendanceTiming, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord, syncLocation };
