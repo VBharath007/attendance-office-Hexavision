@@ -78,8 +78,57 @@ app.use((err, req, res, next) => {
   });
 });
 
+const cron = require('node-cron');
+const { sendReminders } = require('./src/services/notificationService');
+
+// ── LOCAL CRON JOBS ──────────────────────────────────────────────
+// These simulate Firebase Scheduled Functions locally
+
+// 9:30 AM Reminder
+cron.schedule('30 9 * * *', async () => {
+  console.log('⏰ Local Cron: Triggering 9:30 AM Reminder');
+  const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
+  await sendReminders('Check-In Time! 🏢', 'It is 9:30 AM. Don\'t forget to mark your attendance!', imageUrl);
+}, { timezone: "Asia/Kolkata" });
+
+// 10:00 AM Reminder
+cron.schedule('0 10 * * *', async () => {
+  console.log('⏰ Local Cron: Triggering 10:00 AM Reminder');
+  const imageUrl = 'https://plus.unsplash.com/premium_vector-1745401065827-c3e1772c0972?q=80&w=880&auto=format&fit=crop';
+  await sendReminders('Late Warning! ⏰', 'It is 10:00 AM. Check in before 10:10 AM to avoid being blocked!', imageUrl);
+}, { timezone: "Asia/Kolkata" });
+
+// 10:05 AM Reminder
+cron.schedule('5 10 * * *', async () => {
+  console.log('⏰ Local Cron: Triggering 10:05 AM Reminder');
+  const imageUrl = 'https://media.istockphoto.com/id/1141031241/vector/closing-soon-stamp-on-white.webp?a=1&b=1&s=612x612&w=0&k=20&c=ni9bApruHVK_RPYL995ab1GXbCJMbYufKYSwkq2Ypac=';
+  await sendReminders('Check-In Closing Soon! ⚠️', 'It is 10:05 AM. Only 5 minutes left to mark your attendance before it closes!', imageUrl);
+}, { timezone: "Asia/Kolkata" });
+
+// 6:30 PM Reminder
+cron.schedule('30 18 * * *', async () => {
+  console.log('⏰ Local Cron: Triggering 6:30 PM Reminder');
+  const imageUrl = 'https://plus.unsplash.com/premium_vector-1747381876212-1283f80e5497?w=600&auto=format&fit=crop';
+  await sendReminders('Shift Ended 🌅', 'It is 6:30 PM. Great work today! The system will auto check you out if you haven\'t already.', imageUrl);
+}, { timezone: "Asia/Kolkata" });
+
+// 10:00 PM Reminder
+cron.schedule('0 22 * * *', async () => {
+  console.log('⏰ Local Cron: Triggering 10:00 PM Reminder');
+  const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
+  await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl);
+}, { timezone: "Asia/Kolkata" });
+
+// 🚀 TEMPORARY: 5-Minute Test Reminder (Runs every 5 minutes)
+cron.schedule('*/5 * * * *', async () => {
+  console.log('⏰ Test Cron: Triggering 5-Minute Reminder');
+  const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
+  await sendReminders('5-Min Pulse Check! ⚡', 'This is your real-time 5-minute test notification.', imageUrl);
+}, { timezone: "Asia/Kolkata" });
+
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('🚀 Local Schedulers (Cron) are active!');
 });

@@ -58,5 +58,20 @@ router.post('/token', authenticate, async (req, res) => {
   }
 });
 
+const { sendReminders } = require('../services/notificationService');
+
+router.post('/test-reminder', authenticate, async (req, res) => {
+  try {
+    const title = req.body.title || 'Test Reminder 🔔';
+    const body = req.body.body || 'This is a test notification from the server.';
+    const imageUrl = req.body.imageUrl || 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
+    
+    const result = await sendReminders(title, body, imageUrl);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
 

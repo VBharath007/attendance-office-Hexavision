@@ -180,49 +180,7 @@ exports.createSuperAdmin = functions.https.onRequest(async (req, res) => {
   }
 });
 
-// 2. Notification Reminders (9:30 AM, 10:00 AM, 10:10 AM, 6:30 PM)
-const sendReminders = async (title, body, imageUrl = null) => {
-  // Only send to employees with active sessions
-  const sessionsSnap = await db.collection('sessions')
-    .where('is_active', '==', true)
-    .get();
-
-  const tokens = [];
-  sessionsSnap.forEach(doc => {
-    const data = doc.data();
-    if (data.fcm_token) tokens.push(data.fcm_token);
-  });
-
-  if (tokens.length > 0) {
-    // Remove duplicates
-    const uniqueTokens = [...new Set(tokens)];
-
-    const message = {
-      tokens: uniqueTokens,
-      notification: { title, body },
-      android: {
-        priority: 'high',
-      }
-    };
-
-    if (imageUrl) {
-      message.notification.imageUrl = imageUrl;
-      message.android.notification = { imageUrl: imageUrl };
-      message.apns = {
-        payload: { aps: { 'mutable-content': 1 } },
-        fcm_options: { image: imageUrl }
-      };
-    }
-
-    console.log('Sending reminder to:', uniqueTokens);
-    console.log('Message:', message);
-
-    await messaging.sendEachForMulticast(message);
-
-
-  }
-};
-
+const { sendReminders } = require('./services/notificationService');
 
 exports.reminder930 = functions.pubsub.schedule('30 9 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
@@ -263,4 +221,11 @@ exports.reminder2215 = functions.pubsub.schedule('15 22 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
     await sendReminders('Test Good Night! ✨', 'It is 10:15 PM. This is a test notification.', imageUrl);
+  });
+
+// 🚀 TEMPORARY: 5-Minute Test Reminder (Every 5 minutes)
+exports.testReminderEvery5Min = functions.pubsub.schedule('every 5 minutes')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
+    await sendReminders('5-Min Pulse Check! ⚡', 'This is your real-time 5-minute test notification from Firebase.', imageUrl);
   });
