@@ -3,19 +3,19 @@ const bcrypt = require('bcryptjs');
 
 async function seedAdmins() {
   const admins = [
-    { username: 'viswa', name: 'Viswa', password: 'Hexaviswa123' },
-    { username: 'ashvini', name: 'Ashvini', password: 'Hexaashvini123' },
-    { username: 'Bharath', name: 'Bharath', password: 'KIngbharath123' }
+    { username: 'Viswa', name: 'Viswa', password: 'Hexaviswa123' },
+    { username: 'Ashvini', name: 'Ashvini', password: 'Hexaashvini123' },
+    { username: 'Bharath', name: 'Bharath', password: 'Kingbharath123' }
   ];
 
   console.log('🚀 Seeding admins...');
 
   for (const admin of admins) {
     const hashedPassword = await bcrypt.hash(admin.password, 12);
-    
+
     // Check if exists
     const existing = await db.collection('admins').where('username', '==', admin.username).get();
-    
+
     if (existing.empty) {
       await db.collection('admins').add({
         username: admin.username,
