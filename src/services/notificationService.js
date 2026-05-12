@@ -42,21 +42,35 @@ const sendReminders = async (title, body, imageUrl = null) => {
     // Get unique UIDs to fetch names
     const uids = [...new Set(uniqueTokens.map(t => tokenToLatestSession[t].uid))];
 
-    // 3. Fetch employee names in chunks (Firestore 'in' query limit is 30)
+    // 3. Fetch names from both employees and admins collections
     const uidToName = {};
     const chunkSize = 30;
+    
     for (let i = 0; i < uids.length; i += chunkSize) {
       const chunk = uids.slice(i, i + chunkSize);
+      
+      // Fetch from employees
       const empsSnap = await db.collection('employees')
         .where('uid', 'in', chunk)
         .get();
       
       empsSnap.forEach(doc => {
         const data = doc.data();
-        // Get only the first name for a friendly "Hi Name"
-        const firstName = data.full_name ? data.full_name.split(' ')[0] : 'Member';
-        uidToName[doc.id] = firstName;
+        uidToName[doc.id] = data.full_name ? data.full_name.split(' ')[0] : 'Member';
       });
+
+      // Fetch from admins (for those not found in employees)
+      const remainingUids = chunk.filter(id => !uidToName[id]);
+      if (remainingUids.length > 0) {
+        const adminsSnap = await db.collection('admins')
+          .where('uid', 'in', remainingUids)
+          .get();
+        
+        adminsSnap.forEach(doc => {
+          const data = doc.data();
+          uidToName[doc.id] = data.full_name ? data.full_name.split(' ')[0] : 'Admin';
+        });
+      }
     }
 
     // 4. Build individual personalized messages
