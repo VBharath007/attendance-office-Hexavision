@@ -695,17 +695,16 @@ const getTodayRecord = async (employeeId) => {
   return data;
 };
 
-const getAdminToday = async (dateStr = null) => {
+const getAdminToday = async () => {
   const now = moment().tz(TZ);
-  const targetDate = dateStr ? moment(dateStr).tz(TZ) : now;
-  const todayStr = targetDate.format('YYYY-MM-DD');
-  const currentMonth = targetDate.month() + 1;
-  const currentYear = targetDate.year();
+  const todayStr = now.format('YYYY-MM-DD');
+  const currentMonth = now.month() + 1;
+  const currentYear = now.year();
 
   const attSnap = await db.collection('attendance').where('date', '==', todayStr).get();
   const empSnap = await db.collection('employees').where('status', '==', 'active').get();
   
-  // Fetch monthly summaries for the context of that date
+  // Fetch monthly summaries for all employees for the current month
   const summarySnap = await db.collection('monthly_summary')
     .where('month', '==', currentMonth)
     .where('year', '==', currentYear)
@@ -738,6 +737,7 @@ const getAdminToday = async (dateStr = null) => {
     const att = attendanceData[empId] || { status: 'absent' };
     const summary = summaries[empId] || { present_days: 0, total_working_days: 0 };
 
+    // 🔥 SMART FIX: Re-calculate hours if zero but checked out
     if ((!att.working_hours || att.working_hours === 0) && att.check_in && att.check_out) {
       const inMin = toMin(att.check_in);
       const outMin = toMin(att.check_out);
@@ -776,100 +776,4 @@ const getAdminToday = async (dateStr = null) => {
   };
 };
 
-const getAdminYearlyDashboard = async (year) => {
-  const empSnap = await db.collection('employees').where('status', '==', 'active').get();
-  const summarySnap = await db.collection('monthly_summary')
-    .where('year', '==', parseInt(year))
-    .get();
-
-  const yearlyData = {};
-  summarySnap.forEach(doc => {
-    const s = doc.data();
-    if (!yearlyData[s.employee_id]) {
-      yearlyData[s.employee_id] = { present: 0, late: 0, appreciated: 0, total_days: 0 };
-    }
-    yearlyData[s.employee_id].present += (s.present_days || 0);
-    yearlyData[s.employee_id].late += (s.late_days || 0);
-    yearlyData[s.employee_id].appreciated += (s.appreciated_count || 0);
-    yearlyData[s.employee_id].total_days += (s.total_working_days || 0);
-  });
-
-  let totalPresent = 0;
-  let totalLate = 0;
-
-  const data = empSnap.docs.map(doc => {
-    const empId = doc.id;
-    const emp = doc.data();
-    const stats = yearlyData[empId] || { present: 0, total_days: 0 };
-    totalPresent += stats.present;
-    totalLate += stats.late;
-
-    return {
-      id: empId,
-      full_name: emp.full_name || 'Staff',
-      designation: emp.designation || 'Employee',
-      employee_id: emp.employee_id || empId,
-      present_days: stats.present,
-      total_month_days: stats.total_days || 300
-    };
-  });
-
-  return {
-    summary: { present: totalPresent, late: totalLate, total: empSnap.size },
-    data
-  };
-};
-
-const getAdminMonthlyDashboard = async (month, year) => {
-  const empSnap = await db.collection('employees').where('status', '==', 'active').get();
-  
-  const summarySnap = await db.collection('monthly_summary')
-    .where('month', '==', parseInt(month))
-    .where('year', '==', parseInt(year))
-    .get();
-
-  const summaries = {};
-  summarySnap.forEach(doc => {
-    const s = doc.data();
-    summaries[s.employee_id] = s;
-  });
-
-  // Calculate totals for the organization
-  let totalPresent = 0;
-  let totalLate = 0;
-  let totalAppreciated = 0;
-  let totalAbsent = 0;
-
-  const data = empSnap.docs.map(doc => {
-    const empId = doc.id;
-    const emp = doc.data();
-    const summary = summaries[empId] || { present_days: 0, total_working_days: 0, late_days: 0, appreciated_count: 0, absent_days: 0 };
-
-    totalPresent += (summary.present_days || 0);
-    totalLate += (summary.late_days || 0);
-    totalAppreciated += (summary.appreciated_count || 0);
-    totalAbsent += (summary.absent_days || 0);
-
-    return {
-      id: empId,
-      full_name: emp.full_name || 'Staff',
-      designation: emp.designation || 'Employee',
-      employee_id: emp.employee_id || empId,
-      present_days: summary.present_days || 0,
-      total_month_days: summary.total_working_days || 26
-    };
-  });
-
-  return {
-    summary: {
-      present: totalPresent,
-      late: totalLate,
-      appreciated: totalAppreciated,
-      absent: totalAbsent,
-      total: empSnap.size
-    },
-    data
-  };
-};
-
-module.exports = { checkIn, checkOut, autoCheckOutAll, editAttendanceTiming, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord, syncLocation, getAdminMonthlyDashboard, getAdminYearlyDashboard };
+module.exports = { checkIn, checkOut, autoCheckOutAll, editAttendanceTiming, getAdminToday, getMonthlyAttendance, computeMonthlySummary, getTodayRecord, syncLocation };
