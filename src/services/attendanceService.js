@@ -5,14 +5,16 @@ const C = require('../config/constants');
 const TZ = C.TIMEZONE;
 const toMin = (t) => {
   if (!t) return 0;
-  // Handle "hh:mm AM/PM" format
+  t = t.trim().toUpperCase();
+  // Handle "hh:mm AM/PM" or "hh:mm A/P" format
   if (t.includes(' ')) {
     const parts = t.split(' ');
     const timePart = parts[0];
-    const modifier = parts[1].toUpperCase();
+    const modifier = parts[1];
     let [h, m] = timePart.split(':').map(Number);
     if (h === 12) h = 0;
-    if (modifier === 'PM') h += 12;
+    // Handle both PM and P
+    if (modifier.startsWith('P')) h += 12;
     return h * 60 + m;
   }
   // Handle "HH:mm" format (24h)
@@ -412,9 +414,15 @@ const editAttendanceTiming = async (employeeId, date, checkInTime, checkOutTime)
     // Only subtract lunch break if worked more than 6 hours
     const lunchDeduction = rawHours > 6 ? C.LUNCH_BREAK_HOURS : 0;
     workingHours = parseFloat(Math.max(0, rawHours - lunchDeduction).toFixed(2));
-    overtimeMinutes = Math.max(0, checkOutMin - OFFICE_END);
-    isAppreciated = lateMinutes === 0 && checkOutMin >= APPRECIATION_END;
-    if (workingHours < 4) status = C.STATUS.HALF_DAY;
+    const officeEndMin = toMin(C.OFFICE_END || '18:30');
+    overtimeMinutes = Math.max(0, checkOutMin - officeEndMin);
+    
+    // Appreciation Rule: In by 10:10, Out after 07:30 PM (19:30)
+    const appreciationInMax = toMin(C.APPRECIATION_CHECKIN_MAX || '10:10');
+    const appreciationOutMin = toMin(C.APPRECIATION_CHECKOUT_MIN || '19:30');
+    isAppreciated = (checkInMin <= appreciationInMax) && (checkOutMin >= appreciationOutMin);
+    
+    if (workingHours < 4) status = C.STATUS.ABSENT;
   }
 
   await attRef.update({
