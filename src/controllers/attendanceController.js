@@ -77,7 +77,8 @@ const getMonthlySummary = async (req, res) => {
 
 const getAdminToday = async (req, res) => {
   try {
-    const result = await attendanceService.getAdminToday();
+    const { date } = req.query;
+    const result = await attendanceService.getAdminToday(date);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -128,4 +129,25 @@ const syncLocation = async (req, res) => {
   }
 };
 
-module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary, getAdminEmployeeMonthly, editTiming, syncLocation };
+const getAdminMonthlyStats = async (req, res) => {
+  try {
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const result = await attendanceService.getAdminMonthlyDashboard(month, year);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getAdminYearlyStats = async (req, res) => {
+  try {
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const result = await attendanceService.getAdminYearlyDashboard(year);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { checkIn, checkOut, getToday, getAdminToday, getMonthly, getMonthlySummary, getAdminEmployeeMonthly, editTiming, syncLocation, getAdminMonthlyStats, getAdminYearlyStats };
