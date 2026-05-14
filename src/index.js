@@ -182,6 +182,12 @@ exports.createSuperAdmin = functions.https.onRequest(async (req, res) => {
 
 const { sendReminders } = require('./services/notificationService');
 
+exports.reminder0700 = functions.pubsub.schedule('0 7 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    const imageUrl = 'https://images.unsplash.com/photo-1612529377791-b3de2b201f0e?q=80&w=687&auto=format&fit=crop';
+    await sendReminders('Good Morning! ☀️', 'It is 7:00 AM. Wishing you a productive and wonderful day ahead!', imageUrl);
+  });
+
 exports.reminder930 = functions.pubsub.schedule('30 9 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';

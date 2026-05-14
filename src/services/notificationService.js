@@ -1,4 +1,4 @@
-const { db, messaging } = require('../config/firebase');
+const { admin, db, messaging } = require('../config/firebase');
 
 /**
  * Sends push notifications to all employees with active sessions.
@@ -49,26 +49,37 @@ const sendReminders = async (title, body, imageUrl = null) => {
     for (let i = 0; i < uids.length; i += chunkSize) {
       const chunk = uids.slice(i, i + chunkSize);
       
-      // Fetch from employees
+      // Fetch from employees using document IDs for better reliability
       const empsSnap = await db.collection('employees')
-        .where('uid', 'in', chunk)
+        .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
         .get();
       
       empsSnap.forEach(doc => {
         const data = doc.data();
-        uidToName[doc.id] = data.full_name ? data.full_name.split(' ')[0] : 'Member';
+        let firstName = 'Member';
+        if (data.full_name) {
+          firstName = data.full_name.trim().split(' ')[0];
+          // Capitalize first letter
+          firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+        }
+        uidToName[doc.id] = firstName;
       });
 
       // Fetch from admins (for those not found in employees)
       const remainingUids = chunk.filter(id => !uidToName[id]);
       if (remainingUids.length > 0) {
         const adminsSnap = await db.collection('admins')
-          .where('uid', 'in', remainingUids)
+          .where(admin.firestore.FieldPath.documentId(), 'in', remainingUids)
           .get();
         
         adminsSnap.forEach(doc => {
           const data = doc.data();
-          uidToName[doc.id] = data.full_name ? data.full_name.split(' ')[0] : 'Admin';
+          let firstName = 'Admin';
+          if (data.full_name) {
+            firstName = data.full_name.trim().split(' ')[0];
+            firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+          }
+          uidToName[doc.id] = firstName;
         });
       }
     }
@@ -77,8 +88,14 @@ const sendReminders = async (title, body, imageUrl = null) => {
     const messages = [];
     for (const token of uniqueTokens) {
       const uid = tokenToLatestSession[token].uid;
-      const name = uidToName[uid] || 'Team';
-      const personalizedBody = `Hi ${name}, ${body}`;
+      const name = uidToName[uid] || 'Team Member';
+      
+      // Personalize the body: "Hi Name, [lowercase first letter of original message]"
+      let formattedBody = body;
+      if (body && body.length > 0) {
+        formattedBody = body.charAt(0).toLowerCase() + body.slice(1);
+      }
+      const personalizedBody = `Hi ${name}, ${formattedBody}`;
       
       const msg = {
         token: token,
