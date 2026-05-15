@@ -58,6 +58,30 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, adminLogin, getMe, refreshToken, logout };
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    console.log(`📩 Incoming Forgot Password Request for: ${email}`);
+    await authService.forgotPassword(email);
+    res.json({ success: true, message: 'OTP sent successfully!' });
+  } catch (err) {
+    console.error(`❌ Forgot Password Error: ${err.message}`);
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, new_password } = req.body;
+    console.log(`🔑 Incoming Reset Password Request for: ${email}`);
+    await authService.resetPassword(email, otp, new_password);
+    res.json({ success: true, message: 'Password reset successful!' });
+  } catch (err) {
+    console.error(`❌ Reset Password Error: ${err.message}`);
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { register, login, adminLogin, getMe, refreshToken, logout, forgotPassword, resetPassword };
 
 

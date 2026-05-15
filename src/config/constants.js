@@ -13,8 +13,8 @@ module.exports = {
 
   OFFICE_LAT: 9.932548064389838,
   OFFICE_LNG: 78.14469758285455,
-  MAX_DISTANCE_METERS: 70, 
-  GEOFENCE_THRESHOLD_METERS: 300, 
+  MAX_DISTANCE_METERS: 70,
+  GEOFENCE_THRESHOLD_METERS: 300,
 
   ROLES: { ADMIN: 'admin', EMPLOYEE: 'employee' },
 
@@ -26,7 +26,7 @@ module.exports = {
   LEAVE_TYPES: {
     EARNED: 'earned', UNPAID: 'unpaid', CASUAL: 'casual',
     HALF_DAY: 'half_day', PERMISSION_HOURS: 'permission_hours',
-    CLIENT_MEETING: 'client_meeting',
+    CLIENT_MEETING: 'client_meeting', EMPLOYEE_SUPPORT: 'employee_support',
   },
 
   LEAVE_STATUS: {
@@ -45,4 +45,8 @@ module.exports = {
   SICK_LEAVES_PER_YEAR: 12,
   CASUAL_LEAVES_PER_MONTH: 1,
   FREE_PERMISSION_MIN_PER_MONTH: 60, // 1 hour free permission
+
+  // Email Config (Nodemailer)
+  EMAIL_USER: 'bababharath005@gmail.com', // ⚠️ Replace with your Gmail
+  EMAIL_PASS: 'lzau rity oyoz kvuk',  // ⚠️ Replace with Gmail App Password
 };

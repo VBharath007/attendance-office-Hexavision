@@ -1,6 +1,7 @@
 const { auth, db } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
 const tokenService = require('./tokenService');
+const mailService = require('./mailService');
 const { v4: uuidv4 } = require('uuid');
 
 const registerEmployee = async (data) => {
@@ -149,13 +150,73 @@ const getUserProfile = async (uid, role) => {
   }
 };
 
+const forgotPassword = async (email) => {
+  // Check in employees first
+  let userSnap = await db.collection('employees').where('email', '==', email).limit(1).get();
+  let userType = 'employee';
+
+  // If not found in employees, check in admins
+  if (userSnap.empty) {
+    userSnap = await db.collection('admins').where('email', '==', email).limit(1).get();
+    userType = 'admin';
+  }
+
+  if (userSnap.empty) throw new Error('No account found with this email');
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+  await db.collection('password_resets').doc(email).set({
+    email, otp, expiry, user_type: userType, created_at: new Date()
+  });
+
+  // Send real email OTP
+  await mailService.sendOTP(email, otp);
+
+  console.log(`🔑 OTP for ${email} (${userType}): ${otp}`);
+  return { success: true };
+};
+
+const resetPassword = async (email, otp, newPassword) => {
+  const resetDoc = await db.collection('password_resets').doc(email).get();
+  if (!resetDoc.exists) throw new Error('No OTP requested for this email');
+
+  const { otp: savedOtp, expiry, user_type } = resetDoc.data();
+  if (savedOtp !== otp) throw new Error('Invalid OTP');
+  if (new Date() > expiry.toDate()) throw new Error('OTP has expired');
+
+  const collection = user_type === 'admin' ? 'admins' : 'employees';
+  const userSnap = await db.collection(collection).where('email', '==', email).limit(1).get();
+  
+  if (userSnap.empty) throw new Error('User not found');
+  const userDoc = userSnap.docs[0];
+
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+  
+  // Update Firestore
+  await userDoc.ref.update({ password: hashedPassword, updated_at: new Date() });
+  
+  // Update Firebase Auth if UID exists (Admins might not have it if created via setup)
+  const userData = userDoc.data();
+  if (userData.uid) {
+    await auth.updateUser(userData.uid, { password: newPassword });
+  }
+
+  // Delete OTP record
+  await resetDoc.ref.delete();
+
+  return { success: true };
+};
+
 module.exports = { 
   registerEmployee, 
   loginEmployee, 
   adminLogin, 
   getUserProfile,
   refreshToken,
-  logout
+  logout,
+  forgotPassword,
+  resetPassword
 };
 
 

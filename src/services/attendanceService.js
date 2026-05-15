@@ -120,19 +120,51 @@ const checkIn = async (employeeId, latitude, longitude) => {
   const currentYear = now.year();
   let warningCount = emp.late_warning_count || 0;
 
-  // Check for approved permission today to waive late penalty
+  // Check for approved permission today (Permission, Meeting, or Support)
+  const timeBasedTypes = [
+    C.LEAVE_TYPES.PERMISSION_HOURS,
+    C.LEAVE_TYPES.CLIENT_MEETING,
+    C.LEAVE_TYPES.EMPLOYEE_SUPPORT
+  ];
+
   const permSnap = await db.collection('leaves')
     .where('employee_id', '==', employeeId)
     .where('status', '==', 'approved')
-    .where('leave_type', '==', 'permission_hours')
+    .where('leave_type', 'in', timeBasedTypes)
     .get();
 
-  const activePermission = permSnap.docs.find(doc => {
-    const d = doc.data();
-    if (d.permission_date !== today) return false;
-    const pEnd = toMin(d.permission_to);
-    return checkInMin <= pEnd + 15; // 15 mins buffer after permission ends
+  const permissionsToday = permSnap.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(d => d.permission_date === today);
+
+  // Robust Late Calculation with Permission Overlap
+  let totalLateMinutes = Math.max(0, checkInMin - OFFICE_START);
+  let overlappingPermissionMinutes = 0;
+  let permissionId = null;
+  let permissionHours = 0;
+  let permissionTo = null;
+
+  permissionsToday.forEach(p => {
+    const pFrom = toMin(p.permission_from);
+    const pTo = toMin(p.permission_to);
+    
+    // Overlap between [OFFICE_START, checkInMin] and [pFrom, pTo]
+    const overlapStart = Math.max(OFFICE_START, pFrom);
+    const overlapEnd = Math.min(checkInMin, pTo);
+    
+    if (overlapEnd > overlapStart) {
+      overlappingPermissionMinutes += (overlapEnd - overlapStart);
+      if (!permissionId || (pTo - pFrom > permissionHours * 60)) {
+        permissionId = p.id;
+        permissionHours = p.permission_hours || 0;
+        permissionTo = p.permission_to;
+      }
+    }
   });
+
+  const effectiveLateMinutes = Math.max(0, totalLateMinutes - overlappingPermissionMinutes);
+  const isLate = effectiveLateMinutes > 15; // 15-minute grace period
+  const lateMinutes = isLate ? effectiveLateMinutes : 0;
 
   // Reset monthly warning counter
   if (emp.late_warning_reset_month !== currentMonth || emp.late_warning_reset_year !== currentYear) {
@@ -140,8 +172,6 @@ const checkIn = async (employeeId, latitude, longitude) => {
     await empRef.update({ late_warning_count: 0, late_warning_reset_month: currentMonth, late_warning_reset_year: currentYear });
   }
 
-  const isLate = checkInMin > GRACE && !activePermission;
-  const lateMinutes = isLate ? checkInMin - OFFICE_START : 0;
   const newWarningCount = isLate ? warningCount + 1 : warningCount;
   const isWarningDay = isLate && newWarningCount <= C.LATE_WARNING_DAYS;
   const lateDeductionHours = isLate && !isWarningDay ? 1 : 0;
@@ -177,6 +207,9 @@ const checkIn = async (employeeId, latitude, longitude) => {
     late_minutes: lateMinutes,
     late_deduction_hours: lateDeductionHours,
     is_warning_day: isWarningDay,
+    permission_id: permissionId,
+    permission_hours: permissionHours,
+    permission_to: permissionTo,
     check_out: null,
     working_hours: 0,
     overtime_minutes: 0,
@@ -254,8 +287,13 @@ const checkOut = async (employeeId, latitude, longitude, isAuto = false) => {
 
   // 🕒 Logic: Split between Regular and Overtime
   const regularCheckOutMin = Math.min(checkOutMin, officeEndMin);
-  const rawWorkingMinutes = Math.max(0, regularCheckOutMin - checkInMin);
-  const workingHours = parseFloat((rawWorkingMinutes / 60).toFixed(2));
+  
+  // Total Working Hours = (Check-out - Check-in) + Permission Hours
+  const actualWorkingMinutes = Math.max(0, regularCheckOutMin - checkInMin);
+  const permissionMinutes = (data.permission_hours || 0) * 60;
+  const totalEffectiveMinutes = actualWorkingMinutes + permissionMinutes;
+  
+  const workingHours = parseFloat((totalEffectiveMinutes / 60).toFixed(2));
   
   const overtimeMinutes = Math.max(0, checkOutMin - officeEndMin);
 
@@ -534,19 +572,37 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     if (wh === 0 && r.check_in && r.check_out) {
       const inMin = toMin(r.check_in);
       const outMin = toMin(r.check_out);
-      wh = parseFloat(((outMin - inMin) / 60).toFixed(2));
+      const permHours = r.permission_hours || 0;
+      wh = parseFloat(((outMin - inMin + permHours * 60) / 60).toFixed(2));
     }
 
     let status = r.status;
     const checkInMin = toMin(r.check_in);
     const graceMin = toMin(C.GRACE_TIME || '10:10');
 
-    // Re-evaluate status based on new rules
+    // Re-evaluate status based on new overlap rules
     if (r.check_in && r.check_out) {
       if (wh < 4) {
         status = C.STATUS.ABSENT;
       } else {
-        status = checkInMin > graceMin ? C.STATUS.LATE : C.STATUS.PRESENT;
+        const dateLeaves = monthlyLeaves.filter(l => 
+          (l.from_date || l.permission_date) === r.date && l.status === 'approved'
+        );
+        
+        const OFFICE_START = toMin(C.OFFICE_START || '09:30');
+        let totalLateMinutes = Math.max(0, checkInMin - OFFICE_START);
+        let overlap = 0;
+        
+        dateLeaves.forEach(l => {
+          const pFrom = toMin(l.permission_from);
+          const pTo = toMin(l.permission_to);
+          const overlapStart = Math.max(OFFICE_START, pFrom);
+          const overlapEnd = Math.min(checkInMin, pTo);
+          if (overlapEnd > overlapStart) overlap += (overlapEnd - overlapStart);
+        });
+
+        const effectiveLate = Math.max(0, totalLateMinutes - overlap);
+        status = effectiveLate > 15 ? C.STATUS.LATE : C.STATUS.PRESENT;
       }
     }
     return { ...r, working_hours: wh, status: status };
