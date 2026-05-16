@@ -1,26 +1,14 @@
-const nodemailer = require('nodemailer');
 const C = require('../config/constants');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // Port 587 uses STARTTLS
-  auth: {
-    user: C.EMAIL_USER,
-    pass: C.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false // Helps in some restricted environments
-  },
-  connectionTimeout: 15000,
-});
-
+/**
+ * Sends OTP using Brevo (formerly Sendinblue) API.
+ * This method is professional and bypasses cloud hosting port blocks.
+ */
 const sendOTP = async (email, otp) => {
-  const mailOptions = {
-    from: `"Attendify Support" <${C.EMAIL_USER}>`,
-    to: email,
-    subject: 'Password Reset OTP - Attendify',
-    html: `
+  const apiKey = C.BREVO_API_KEY;
+  const senderEmail = C.EMAIL_SENDER;
+
+  const emailHtml = `
       <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0d0d0d; padding: 40px 20px; text-align: center;">
         <div style="max-width: 450px; margin: 0 auto; background-color: #161616; padding: 40px 30px; border-radius: 24px; border: 1px solid #262626; box-shadow: 0 20px 40px rgba(0,0,0,0.4);">
           
@@ -52,17 +40,35 @@ const sendOTP = async (email, otp) => {
           </div>
         </div>
       </div>
-    `,
-  };
+  `;
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`📧 Email sent to ${email}: ${info.messageId}`);
-    return true;
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': apiKey,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: 'Attendify Support', email: senderEmail },
+        to: [{ email: email }],
+        subject: 'Password Reset OTP - Attendify',
+        htmlContent: emailHtml
+      })
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log(`📧 Professional Email sent to ${email} via Brevo. ID: ${result.messageId}`);
+      return true;
+    } else {
+      console.error('❌ Brevo API Error:', result);
+      return false;
+    }
   } catch (error) {
-    console.error('❌ Email send failed:', error);
-    // Even if email fails, we don't throw to prevent API crash, 
-    // but the user won't get the code.
+    console.error('❌ Network Error in Brevo sendOTP:', error);
     return false;
   }
 };

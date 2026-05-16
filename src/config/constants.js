@@ -46,7 +46,7 @@ module.exports = {
   CASUAL_LEAVES_PER_MONTH: 1,
   FREE_PERMISSION_MIN_PER_MONTH: 60, // 1 hour free permission
 
-  // Email Config (Nodemailer)
-  EMAIL_USER: 'bababharath005@gmail.com', // ⚠️ Replace with your Gmail
-  EMAIL_PASS: 'lzau rity oyoz kvuk',  // ⚠️ Replace with Gmail App Password
+  // Email Config (Brevo API - Professional Delivery)
+  BREVO_API_KEY: process.env.BREVO_API_KEY || 'xkeysib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  EMAIL_SENDER: 'hexavisionattendance@gmail.com',
 };
