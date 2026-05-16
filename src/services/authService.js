@@ -182,7 +182,7 @@ const forgotPassword = async (email) => {
   }
 
   console.log(`🔑 OTP for ${email} (${userType}): ${otp}`);
-  return { success: true };
+  return { success: true, otp };
 };
 
 const resetPassword = async (email, otp, newPassword) => {
