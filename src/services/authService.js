@@ -176,7 +176,10 @@ const forgotPassword = async (email) => {
   });
 
   // Send real email OTP
-  await mailService.sendOTP(email, otp);
+  const sent = await mailService.sendOTP(email, otp);
+  if (!sent) {
+    throw new Error('Failed to send OTP email. Please check your email settings or try again later.');
+  }
 
   console.log(`🔑 OTP for ${email} (${userType}): ${otp}`);
   return { success: true };
