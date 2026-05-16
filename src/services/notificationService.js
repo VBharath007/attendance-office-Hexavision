@@ -5,8 +5,9 @@ const { admin, db, messaging } = require('../config/firebase');
  * @param {string} title 
  * @param {string} body 
  * @param {string} imageUrl 
+ * @param {Object} extraData - Optional data payload
  */
-const sendReminders = async (title, body, imageUrl = null) => {
+const sendReminders = async (title, body, imageUrl = null, extraData = {}) => {
   try {
     // 1. Get all active sessions with FCM tokens
     const sessionsSnap = await db.collection('sessions')
@@ -103,6 +104,7 @@ const sendReminders = async (title, body, imageUrl = null) => {
           title: title, 
           body: personalizedBody 
         },
+        data: { ...extraData, title: title, body: personalizedBody, name: name },
         android: {
           priority: 'high',
           notification: {
