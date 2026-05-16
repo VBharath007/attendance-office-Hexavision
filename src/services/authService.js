@@ -190,7 +190,11 @@ const resetPassword = async (email, otp, newPassword) => {
   if (!resetDoc.exists) throw new Error('No OTP requested for this email');
 
   const { otp: savedOtp, expiry, user_type } = resetDoc.data();
-  if (savedOtp !== otp) throw new Error('Invalid OTP');
+  
+  if (String(savedOtp) !== String(otp)) {
+    console.log(`❌ OTP Mismatch: Saved[${savedOtp}] vs Input[${otp}]`);
+    throw new Error('Invalid OTP');
+  }
   if (new Date() > expiry.toDate()) throw new Error('OTP has expired');
 
   const collection = user_type === 'admin' ? 'admins' : 'employees';
