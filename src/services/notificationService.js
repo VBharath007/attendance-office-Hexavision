@@ -148,4 +148,72 @@ const sendReminders = async (title, body, imageUrl = null) => {
   }
 };
 
-module.exports = { sendReminders };
+/**
+ * Sends a notification to all admins.
+ * @param {string} title 
+ * @param {string} body 
+ * @param {Object} data - Optional data payload
+ */
+const notifyAdmins = async (title, body, data = {}) => {
+  try {
+    // 1. Get all admins who have an fcm_token
+    const adminsSnap = await db.collection('admins')
+      .where('fcm_token', '!=', null)
+      .get();
+
+    // 2. Also check active admin sessions just in case the fcm_token hasn't been synced to the admin doc yet
+    const activeSessionsSnap = await db.collection('sessions')
+      .where('is_active', '==', true)
+      .get();
+
+    const tokens = new Set();
+    adminsSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.fcm_token) tokens.add(d.fcm_token);
+    });
+
+    // Cross-check sessions for admin UIDs
+    const adminUids = new Set(adminsSnap.docs.map(doc => doc.id));
+    activeSessionsSnap.forEach(doc => {
+      const d = doc.data();
+      if (adminUids.has(d.uid) && d.fcm_token) {
+        tokens.add(d.fcm_token);
+      }
+    });
+
+    if (tokens.size === 0) {
+      console.log('ℹ️ No admin FCM tokens found.');
+      return { success: true, message: 'No admin tokens' };
+    }
+
+    const messages = Array.from(tokens).map(token => ({
+      token: token,
+      notification: { title, body },
+      data: { ...data, type: 'admin_notification' },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+          }
+        }
+      }
+    }));
+
+    console.log(`🔔 Notifying ${messages.length} admins: ${title}`);
+    const response = await messaging.sendEach(messages);
+    return { success: true, sentCount: response.successCount };
+
+  } catch (error) {
+    console.error('❌ Error in notifyAdmins:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+module.exports = { sendReminders, notifyAdmins };

@@ -163,7 +163,8 @@ const checkIn = async (employeeId, latitude, longitude) => {
   });
 
   const effectiveLateMinutes = Math.max(0, totalLateMinutes - overlappingPermissionMinutes);
-  const isLate = effectiveLateMinutes > 15; // 15-minute grace period
+  const allowedLateMinutes = Math.max(0, GRACE - OFFICE_START);
+  const isLate = effectiveLateMinutes > allowedLateMinutes; 
   const lateMinutes = isLate ? effectiveLateMinutes : 0;
 
   // Reset monthly warning counter
@@ -278,6 +279,26 @@ const checkOut = async (employeeId, latitude, longitude, isAuto = false) => {
   if (!attSnap.exists || !attSnap.data().check_in) throw new Error('Please check in first');
 
   const data = attSnap.data();
+  
+  // 🕒 Handle Overtime Check-Out
+  if (data.check_out && data.overtime_check_in && !data.overtime_check_out) {
+    if (isAuto) return { skipped: true, reason: 'Auto check-out not supported for overtime' };
+    
+    await attRef.update({
+      overtime_check_out: timeNow,
+      overtime_check_out_timestamp: new Date(),
+      overtime_check_out_lat: latitude || null,
+      overtime_check_out_lng: longitude || null,
+      updated_at: new Date(),
+    });
+
+    return {
+      isOvertime: true,
+      checkOutTime: timeNow,
+      message: '✅ Overtime check-out successful! Well done.',
+    };
+  }
+
   if (data.check_out && !isAuto) throw new Error('Already checked out today');
   if (data.check_out && isAuto) return { skipped: true, reason: 'Already checked out' };
 
@@ -581,28 +602,31 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     const graceMin = toMin(C.GRACE_TIME || '10:10');
 
     // Re-evaluate status based on new overlap rules
-    if (r.check_in && r.check_out) {
-      if (wh < 4) {
-        status = C.STATUS.ABSENT;
-      } else {
-        const dateLeaves = monthlyLeaves.filter(l => 
-          (l.from_date || l.permission_date) === r.date && l.status === 'approved'
-        );
-        
-        const OFFICE_START = toMin(C.OFFICE_START || '09:30');
-        let totalLateMinutes = Math.max(0, checkInMin - OFFICE_START);
-        let overlap = 0;
-        
-        dateLeaves.forEach(l => {
-          const pFrom = toMin(l.permission_from);
-          const pTo = toMin(l.permission_to);
-          const overlapStart = Math.max(OFFICE_START, pFrom);
-          const overlapEnd = Math.min(checkInMin, pTo);
-          if (overlapEnd > overlapStart) overlap += (overlapEnd - overlapStart);
-        });
+    if (r.check_in) {
+      const dateLeaves = monthlyLeaves.filter(l => 
+        (l.from_date || l.permission_date) === r.date && l.status === 'approved'
+      );
+      
+      const OFFICE_START = toMin(C.OFFICE_START || '09:30');
+      let totalLateMinutes = Math.max(0, checkInMin - OFFICE_START);
+      let overlap = 0;
+      
+      dateLeaves.forEach(l => {
+        const pFrom = toMin(l.permission_from);
+        const pTo = toMin(l.permission_to);
+        const overlapStart = Math.max(OFFICE_START, pFrom);
+        const overlapEnd = Math.min(checkInMin, pTo);
+        if (overlapEnd > overlapStart) overlap += (overlapEnd - overlapStart);
+      });
 
-        const effectiveLate = Math.max(0, totalLateMinutes - overlap);
-        status = effectiveLate > 15 ? C.STATUS.LATE : C.STATUS.PRESENT;
+      const effectiveLate = Math.max(0, totalLateMinutes - overlap);
+      const allowedLate = Math.max(0, graceMin - OFFICE_START);
+      const newStatus = (wh < 4 && r.check_out) ? C.STATUS.ABSENT : (effectiveLate > allowedLate ? C.STATUS.LATE : C.STATUS.PRESENT);
+      
+      // 🔥 Auto-sync status back to database if it's wrong
+      if (status !== newStatus) {
+        status = newStatus;
+        db.collection('attendance').doc(`${employeeId}_${r.date}`).update({ status: newStatus }).catch(e => console.error("Sync Error:", e));
       }
     }
     return { ...r, working_hours: wh, status: status };

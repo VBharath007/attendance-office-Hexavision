@@ -1,6 +1,7 @@
 const { db, messaging } = require('../config/firebase');
 const moment = require('moment-timezone');
 const C = require('../config/constants');
+const notificationService = require('./notificationService');
 
 const toMin = (t) => {
   if (!t) return 0;
@@ -22,7 +23,7 @@ const applyLeave = async (userId, data) => {
   let totalDays = 0;
   let permissionHours = 0;
 
-  const timeBased = ['permission_hours', 'client_meeting', 'employee_support', 'half_day'].contains(leave_type);
+  const timeBased = ['permission_hours', 'client_meeting', 'employee_support', 'half_day'].includes(leave_type);
 
   if (timeBased && permission_from && permission_to) {
     const [fH, fM] = permission_from.split(':').map(Number);
@@ -43,6 +44,24 @@ const applyLeave = async (userId, data) => {
     permission_from: permission_from || null, permission_to: permission_to || null,
     permission_hours: permissionHours, status: 'pending', created_at: new Date()
   });
+
+  // 🔔 Notify Admins
+  try {
+    const empSnap = await db.collection('employees').doc(userId).get();
+    const empName = empSnap.exists ? empSnap.data().full_name : 'An employee';
+    
+    const typeLabel = leave_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const title = `New ${typeLabel} Request`;
+    const body = `${empName} has applied for ${typeLabel}. Reason: ${reason || 'No reason provided'}`;
+    
+    await notificationService.notifyAdmins(title, body, {
+      leave_id: leaveRef.id,
+      employee_id: userId,
+      click_action: 'admin_leaves'
+    });
+  } catch (err) {
+    console.error('❌ Error sending admin notification:', err);
+  }
 
   return { id: leaveRef.id };
 };

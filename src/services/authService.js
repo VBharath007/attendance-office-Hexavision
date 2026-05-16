@@ -103,6 +103,11 @@ const adminLogin = async (username, password, deviceInfo = {}) => {
     is_active: true
   });
 
+  // Update FCM Token in admin record for targeted notifications
+  if (deviceInfo.fcm_token) {
+    await adminDoc.ref.update({ fcm_token: deviceInfo.fcm_token, updated_at: new Date() });
+  }
+
   const customToken = await auth.createCustomToken(adminDoc.id, { role: 'admin' });
 
   const { password: _, ...adminProfile } = adminData;
