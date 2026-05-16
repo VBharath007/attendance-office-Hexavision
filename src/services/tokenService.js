@@ -4,8 +4,8 @@ const jwt = require('jsonwebtoken');
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'hexa_access_secret_2024';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'hexa_refresh_secret_2024';
 
-const ACCESS_EXPIRY = '1h';
-const REFRESH_EXPIRY = '7d';
+const ACCESS_EXPIRY = '30d';
+const REFRESH_EXPIRY = '90d';
 
 /**
  * Generate an Access Token

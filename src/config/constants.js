@@ -50,4 +50,3 @@ module.exports = {
   BREVO_API_KEY: process.env.BREVO_API_KEY || 'xkeysib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   EMAIL_SENDER: 'bharathv1004@gmail.com',
 };
- 
