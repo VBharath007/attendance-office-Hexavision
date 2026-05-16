@@ -133,6 +133,15 @@ cron.schedule('0 22 * * *', async () => {
   await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl, { type: 'wakeup' });
 }, { timezone: "Asia/Kolkata" });
 
+// ── MANUAL TEST TRIGGER ──────────────────────────────────────────
+// Hit this in your browser: [YOUR_URL]/api/test-reminder
+app.get('/api/test-reminder', async (req, res) => {
+  console.log('🧪 Manual Test: Triggering Sample Reminder');
+  const imageUrl = 'https://plus.unsplash.com/premium_vector-1747381876212-1283f80e5497?w=600&auto=format&fit=crop';
+  const result = await sendReminders('Test Reminder! 🌅', 'Hi! Ippo unga attendance app pesudha-nu check pannunga. Shift Ended reminder!', imageUrl, { type: 'check-out' });
+  res.json({ message: 'Test notification triggered!', result });
+});
+
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, '0.0.0.0', () => {
