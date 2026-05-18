@@ -185,27 +185,27 @@ const { sendReminders } = require('./services/notificationService');
 exports.reminder0700 = functions.pubsub.schedule('0 7 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://images.unsplash.com/photo-1612529377791-b3de2b201f0e?q=80&w=687&auto=format&fit=crop';
-    await sendReminders('Good Morning! ☀️', 'It is 7:00 AM. Wishing you a productive and wonderful day ahead!', imageUrl);
+    await sendReminders('Good Morning! ☀️', 'It is 7:00 AM. Wishing you a productive and wonderful day ahead!', imageUrl, { type: 'wakeup' });
   });
 
 exports.reminder930 = functions.pubsub.schedule('30 9 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1776868352127-0ad1a8bb98ad?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0';
-    await sendReminders('Check-In Time! 🏢', 'It is 9:30 AM. Don\'t forget to mark your attendance!', imageUrl);
+    await sendReminders('Check-In Time! 🏢', 'It is 9:30 AM. Don\'t forget to mark your attendance!', imageUrl, { type: 'check-in' });
   });
 
 
 exports.reminder1000 = functions.pubsub.schedule('0 10 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1745401065827-c3e1772c0972?q=80&w=880&auto=format&fit=crop';
-    await sendReminders('Late Warning! ⏰', 'It is 10:00 AM. Check in before 10:10 AM to avoid being blocked!', imageUrl);
+    await sendReminders('Late Warning! ⏰', 'It is 10:00 AM. Check in before 10:10 AM to avoid being blocked!', imageUrl, { type: 'check-in' });
   });
 
 
 exports.reminder1005 = functions.pubsub.schedule('5 10 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://media.istockphoto.com/id/1141031241/vector/closing-soon-stamp-on-white.webp?a=1&b=1&s=612x612&w=0&k=20&c=ni9bApruHVK_RPYL995ab1GXbCJMbYufKYSwkq2Ypac=';
-    await sendReminders('Check-In Closing Soon! ⚠️', 'It is 10:05 AM. Only 5 minutes left to mark your attendance before it closes!', imageUrl);
+    await sendReminders('Check-In Closing Soon! ⚠️', 'It is 10:05 AM. Only 5 minutes left to mark your attendance before it closes!', imageUrl, { type: 'check-in' });
   });
 
 
@@ -213,12 +213,18 @@ exports.reminder1005 = functions.pubsub.schedule('5 10 * * *')
 exports.reminder1830 = functions.pubsub.schedule('30 18 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1747381876212-1283f80e5497?w=600&auto=format&fit=crop';
-    await sendReminders('Shift Ended 🌅', 'It is 6:30 PM. Great work today! The system will auto check you out if you haven\'t already.', imageUrl);
+    await sendReminders('Shift Ended 🌅', 'It is 6:30 PM. Great work today! The system will auto check you out if you haven\'t already.', imageUrl, { type: 'check-out' });
+  });
+
+exports.reminder1930 = functions.pubsub.schedule('30 19 * * *')
+  .timeZone(C.TIMEZONE).onRun(async () => {
+    const imageUrl = 'https://plus.unsplash.com/premium_vector-1742796546674-cd9ca7858922?q=80&w=764';
+    await sendReminders('Overtime 💼', 'It is 7:30 PM. You are working overtime today. Take care!', imageUrl, { type: 'overtime' });
   });
 
 
 exports.reminder2200 = functions.pubsub.schedule('0 22 * * *')
   .timeZone(C.TIMEZONE).onRun(async () => {
     const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
-    await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl);
+    await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl, { type: 'good-night' });
   });

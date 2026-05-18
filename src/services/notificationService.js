@@ -1,5 +1,6 @@
 const { admin, db, messaging } = require('../config/firebase');
-
+const moment = require('moment-timezone');
+const C = require('../config/constants');
 /**
  * Sends push notifications to all employees with active sessions.
  * @param {string} title 
@@ -9,6 +10,32 @@ const { admin, db, messaging } = require('../config/firebase');
  */
 const sendReminders = async (title, body, imageUrl = null, extraData = {}) => {
   try {
+    const today = moment().tz(C.TIMEZONE).format('YYYY-MM-DD');
+    const isSunday = moment().tz(C.TIMEZONE).day() === 0;
+
+    // Skip on Sundays
+    if (isSunday) {
+      console.log('ℹ️ Today is Sunday, skipping reminders.');
+      return { success: true, message: 'Skipped for Sunday' };
+    }
+
+    // Get today's attendance
+    const attSnap = await db.collection('attendance').where('date', '==', today).get();
+    const attendanceMap = {};
+    attSnap.forEach(doc => {
+      attendanceMap[doc.data().employee_id] = doc.data();
+    });
+
+    // Get today's leaves
+    const leavesSnap = await db.collection('leaves').where('status', '==', 'approved').get();
+    const onLeaveIds = new Set();
+    leavesSnap.forEach(doc => {
+      const l = doc.data();
+      if (l.from_date <= today && (l.to_date || l.from_date) >= today) {
+        onLeaveIds.add(l.employee_id);
+      }
+    });
+
     // 1. Get all active sessions with FCM tokens
     const sessionsSnap = await db.collection('sessions')
       .where('is_active', '==', true)
@@ -25,6 +52,26 @@ const sendReminders = async (title, body, imageUrl = null, extraData = {}) => {
 
     sessionsSnap.forEach(doc => {
       const data = doc.data();
+      
+      // Filter out users on leave
+      if (onLeaveIds.has(data.uid)) return;
+
+      // Filter based on reminder type and attendance state
+      if (extraData.type === 'wakeup' || extraData.type === 'check-in') {
+        if (attendanceMap[data.uid] && attendanceMap[data.uid].check_in) {
+          return; // Skip if already checked in
+        }
+      } else if (extraData.type === 'check-out') {
+        if (attendanceMap[data.uid] && attendanceMap[data.uid].check_out) {
+          return; // Skip if already checked out
+        }
+      } else if (extraData.type === 'overtime') {
+        const att = attendanceMap[data.uid];
+        if (!att || !att.check_in || att.check_out) {
+          return; // Skip if they haven't checked in or have already checked out
+        }
+      }
+
       if (data.fcm_token) {
         const lastLogin = data.last_login ? data.last_login.toDate() : new Date(0);
         
