@@ -130,7 +130,7 @@ cron.schedule('30 18 * * *', async () => {
 cron.schedule('0 22 * * *', async () => {
   console.log('⏰ Local Cron: Triggering 10:00 PM Reminder');
   const imageUrl = 'https://plus.unsplash.com/premium_vector-1724752200862-0cfaa11fd7d2?w=600&auto=format&fit=crop';
-  await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl, { type: 'wakeup' });
+  await sendReminders('Good Night! 🌙', 'It is 10:00 PM. Time to rest and recharge for tomorrow. Have a peaceful sleep!', imageUrl, { type: 'good-night' });
 }, { timezone: "Asia/Kolkata" });
 
 // ── MANUAL TEST TRIGGER ──────────────────────────────────────────
