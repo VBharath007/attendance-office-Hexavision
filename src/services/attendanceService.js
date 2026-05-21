@@ -598,11 +598,13 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     }
 
     let status = r.status;
-    const checkInMin = toMin(r.check_in);
-    const graceMin = toMin(C.GRACE_TIME || '10:10');
+    let lateMinutes = r.late_minutes || 0;
+    let lateDeductionHours = r.late_deduction_hours || 0;
+    let isWarningDay = r.is_warning_day || false;
 
-    // Re-evaluate status based on new overlap rules
     if (r.check_in) {
+      const checkInMin = toMin(r.check_in);
+      const graceMin = toMin(C.GRACE_TIME || '10:10');
       const dateLeaves = monthlyLeaves.filter(l => 
         (l.from_date || l.permission_date) === r.date && l.status === 'approved'
       );
@@ -621,16 +623,76 @@ const computeMonthlySummary = async (employeeId, month, year) => {
 
       const effectiveLate = Math.max(0, totalLateMinutes - overlap);
       const allowedLate = Math.max(0, graceMin - OFFICE_START);
-      const newStatus = (wh < 4 && r.check_out) ? C.STATUS.ABSENT : (effectiveLate > allowedLate ? C.STATUS.LATE : C.STATUS.PRESENT);
-      
-      // 🔥 Auto-sync status back to database if it's wrong
-      if (status !== newStatus) {
-        status = newStatus;
-        db.collection('attendance').doc(`${employeeId}_${r.date}`).update({ status: newStatus }).catch(e => console.error("Sync Error:", e));
+      const isLate = effectiveLate > allowedLate;
+      const newStatus = (wh < 4 && r.check_out) ? C.STATUS.ABSENT : (isLate ? C.STATUS.LATE : C.STATUS.PRESENT);
+      const recomputedLateMinutes = newStatus === C.STATUS.LATE ? effectiveLate : 0;
+
+      status = newStatus;
+      lateMinutes = recomputedLateMinutes;
+    }
+    return { 
+      ...r, 
+      working_hours: wh, 
+      status: status, 
+      late_minutes: lateMinutes,
+      late_deduction_hours: lateDeductionHours,
+      is_warning_day: isWarningDay
+    };
+  });
+
+  // Sort and re-evaluate late records chronologically
+  const lateRecords = processedRecords
+    .filter(r => r.status === C.STATUS.LATE)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  lateRecords.forEach((r, index) => {
+    const lateSeqNum = index + 1;
+    r.is_warning_day = lateSeqNum <= (C.LATE_WARNING_DAYS || 3);
+    r.late_deduction_hours = r.is_warning_day ? 0 : 1;
+  });
+
+  // Ensure non-late records are reset
+  processedRecords.forEach(r => {
+    if (r.status !== C.STATUS.LATE) {
+      r.is_warning_day = false;
+      r.late_deduction_hours = 0;
+    }
+  });
+
+  // 🔥 Auto-sync status and fields back to database
+  for (const r of processedRecords) {
+    const originalRecord = records.find(orig => orig.date === r.date);
+    if (originalRecord) {
+      const needsUpdate = 
+        originalRecord.status !== r.status ||
+        originalRecord.late_minutes !== r.late_minutes ||
+        originalRecord.late_deduction_hours !== r.late_deduction_hours ||
+        originalRecord.is_warning_day !== r.is_warning_day;
+
+      if (needsUpdate) {
+        db.collection('attendance')
+          .doc(`${employeeId}_${r.date}`)
+          .update({
+            status: r.status,
+            late_minutes: r.late_minutes,
+            late_deduction_hours: r.late_deduction_hours,
+            is_warning_day: r.is_warning_day,
+            updated_at: new Date()
+          })
+          .catch(e => console.error(`Sync Error for ${employeeId} on ${r.date}:`, e));
       }
     }
-    return { ...r, working_hours: wh, status: status };
-  });
+  }
+
+  // Update employee profile late warning count if current month/year
+  const currentMonth = now.month() + 1;
+  const currentYear = now.year();
+
+  if (parseInt(month) === currentMonth && parseInt(year) === currentYear) {
+    db.collection('employees').doc(employeeId).update({
+      late_warning_count: lateRecords.length
+    }).catch(e => console.error(`Failed to update late_warning_count for ${employeeId}:`, e));
+  }
 
   const presentDays = processedRecords.filter(r =>
     (r.status === C.STATUS.PRESENT || r.status === C.STATUS.LATE || r.status === C.STATUS.HALF_DAY)
@@ -697,10 +759,6 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const hourlyRate = dailyRate > 0 ? dailyRate / 9 : 0; // 9 hours working day
 
   // 🕒 Late Arrival Logic
-  const lateRecords = processedRecords
-    .filter(r => (r.late_minutes || 0) > 0)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
   const lateDaysCount = lateRecords.length;
   const taxableLateDays = Math.max(0, lateDaysCount - (C.LATE_WARNING_DAYS || 3));
   const lateDeduction = Math.max(0, parseFloat((taxableLateDays * hourlyRate).toFixed(2)) || 0);
