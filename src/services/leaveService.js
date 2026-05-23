@@ -133,6 +133,40 @@ const reviewLeave = async (id, { status, admin_remarks }) => {
     }, { merge: true });
   }
 
+  // Automatically mark attendance as 'leave' for other approved leave types
+  if (status === 'approved' && ['sick', 'casual', 'unpaid', 'earned'].includes(leaveData.leave_type)) {
+    const { employee_id, from_date, to_date } = leaveData;
+    if (from_date && to_date) {
+      let start = moment(from_date);
+      let end = moment(to_date);
+      const batch = db.batch();
+      while (start.isSameOrBefore(end, 'day')) {
+        const dateStr = start.format('YYYY-MM-DD');
+        const attRef = db.collection('attendance').doc(`${employee_id}_${dateStr}`);
+        batch.set(attRef, {
+          employee_id,
+          date: dateStr,
+          status: 'leave',
+          check_in: null,
+          check_out: null,
+          working_hours: 0,
+          late_minutes: 0,
+          is_appreciated: false,
+          late_deduction_hours: 0,
+          created_at: new Date(),
+          updated_at: new Date()
+        }, { merge: true });
+        start.add(1, 'days');
+      }
+      await batch.commit();
+
+      // Trigger summary recomputation for that month/year
+      const [year, month] = from_date.split('-').map(Number);
+      const attendanceService = require('./attendanceService');
+      await attendanceService.computeMonthlySummary(employee_id, month, year).catch(console.error);
+    }
+  }
+
   return { id, status };
 };
 

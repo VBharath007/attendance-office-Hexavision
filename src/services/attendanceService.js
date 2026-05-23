@@ -558,6 +558,44 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     return parseInt(d.split('-')[1]) === month;
   });
 
+  // Create a Map of all approved leave days in the month
+  const leaveDatesMap = new Map();
+  monthlyLeaves.forEach(l => {
+    if (l.leave_type) {
+      if (l.from_date && l.to_date) {
+        let start = moment(l.from_date);
+        let end = moment(l.to_date);
+        while (start.isSameOrBefore(end, 'day')) {
+          leaveDatesMap.set(start.format('YYYY-MM-DD'), l.leave_type);
+          start.add(1, 'days');
+        }
+      } else if (l.permission_date) {
+        leaveDatesMap.set(l.permission_date, l.leave_type);
+      }
+    }
+  });
+
+  // Ensure that every approved leave day has a record in our records list
+  leaveDatesMap.forEach((leaveType, dateStr) => {
+    const hasRecord = records.some(r => r.date === dateStr);
+    if (!hasRecord) {
+      records.push({
+        employee_id: employeeId,
+        date: dateStr,
+        status: C.STATUS.LEAVE,
+        check_in: null,
+        check_out: null,
+        working_hours: 0,
+        late_minutes: 0,
+        is_appreciated: false,
+        late_deduction_hours: 0,
+        created_at: new Date(),
+        updated_at: new Date(),
+        isVirtual: true
+      });
+    }
+  });
+
   // Count working days (exclude Sundays & holidays)
   const daysInMonth = moment(`${year}-${month}`, 'YYYY-M').daysInMonth();
   const holidaySnap = await db.collection('holidays').get();
@@ -602,7 +640,19 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     let lateDeductionHours = r.late_deduction_hours || 0;
     let isWarningDay = r.is_warning_day || false;
 
-    if (r.check_in) {
+    // Apply approved leaves check
+    const leaveType = leaveDatesMap.get(r.date);
+    if (leaveType) {
+      if (['sick', 'casual', 'unpaid', 'earned'].includes(leaveType)) {
+        status = C.STATUS.LEAVE;
+        lateMinutes = 0;
+        lateDeductionHours = 0;
+        isWarningDay = false;
+        wh = 0;
+      } else if (leaveType === 'half_day') {
+        status = C.STATUS.HALF_DAY;
+      }
+    } else if (r.check_in) {
       const checkInMin = toMin(r.check_in);
       const graceMin = toMin(C.GRACE_TIME || '10:10');
       const dateLeaves = monthlyLeaves.filter(l => 
@@ -664,6 +714,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     const originalRecord = records.find(orig => orig.date === r.date);
     if (originalRecord) {
       const needsUpdate = 
+        originalRecord.isVirtual ||
         originalRecord.status !== r.status ||
         originalRecord.late_minutes !== r.late_minutes ||
         originalRecord.late_deduction_hours !== r.late_deduction_hours ||
@@ -672,13 +723,20 @@ const computeMonthlySummary = async (employeeId, month, year) => {
       if (needsUpdate) {
         db.collection('attendance')
           .doc(`${employeeId}_${r.date}`)
-          .update({
+          .set({
+            employee_id: employeeId,
+            date: r.date,
             status: r.status,
-            late_minutes: r.late_minutes,
-            late_deduction_hours: r.late_deduction_hours,
-            is_warning_day: r.is_warning_day,
+            check_in: r.check_in || null,
+            check_out: r.check_out || null,
+            working_hours: r.working_hours || 0,
+            late_minutes: r.late_minutes || 0,
+            late_deduction_hours: r.late_deduction_hours || 0,
+            is_warning_day: r.is_warning_day || false,
+            is_appreciated: r.is_appreciated || false,
+            created_at: r.created_at || new Date(),
             updated_at: new Date()
-          })
+          }, { merge: true })
           .catch(e => console.error(`Sync Error for ${employeeId} on ${r.date}:`, e));
       }
     }
@@ -705,9 +763,7 @@ const computeMonthlySummary = async (employeeId, month, year) => {
   const presentDaysSet = new Set(processedRecords.filter(r =>
     (r.status === C.STATUS.PRESENT || r.status === C.STATUS.LATE || r.status === C.STATUS.HALF_DAY)
   ).map(r => r.date));
-  const leaveDaysSet = new Set(monthlyLeaves.flatMap(l => {
-    return [l.date];
-  }));
+  const leaveDaysSet = new Set(leaveDatesMap.keys());
 
   // More accurate absent count: include today if they checked out and work < 4h
   let actualAbsents = 0;
@@ -718,13 +774,13 @@ const computeMonthlySummary = async (employeeId, month, year) => {
     const isHoliday = holidays.has(dateStr);
 
     if (day.isBefore(now, 'day')) {
-      if (!isSunday && !isHoliday && !presentDaysSet.has(dateStr)) {
+      if (!isSunday && !isHoliday && !presentDaysSet.has(dateStr) && !leaveDatesMap.has(dateStr)) {
         actualAbsents++;
       }
     } else if (day.isSame(now, 'day')) {
       // If today and they checked out but didn't meet 4h requirement
       const todayRecord = records.find(r => r.date === dateStr);
-      if (!isSunday && !isHoliday && (!presentDaysSet.has(dateStr) && todayRecord && todayRecord.check_out)) {
+      if (!isSunday && !isHoliday && (!presentDaysSet.has(dateStr) && !leaveDatesMap.has(dateStr) && todayRecord && todayRecord.check_out)) {
         actualAbsents++;
       }
     }
